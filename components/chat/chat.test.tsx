@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLAVE_PENDIENTE, Chat } from "./chat";
+import { CLAVE_PENDIENTE, Chat, INTERVALO_SUGERENCIAS_MS } from "./chat";
 
 const toastSimulado = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSimulado }));
@@ -444,6 +444,10 @@ describe("Chat: sugerencias vivas", () => {
     );
     expect(await screen.findByRole("button", { name: OTRAS[0] }, { timeout: 2000 })).toBeTruthy();
     expect(llamadasA("/api/sugerencias").at(-1)![1]).toMatchObject({ cache: "no-store" });
+  });
+
+  it("por defecto se vuelven a pedir cada 5 s (el panel cambia el tramo en vivo)", () => {
+    expect(INTERVALO_SUGERENCIAS_MS).toBe(5_000);
   });
 
   it("se vuelven a pedir al volver a la pestaña (visibilitychange) y al enfocar", async () => {

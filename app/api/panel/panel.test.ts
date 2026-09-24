@@ -118,6 +118,7 @@ describe("GET /api/panel/metricas", () => {
       bloqueos: { total: 3, porMotivo: { inyeccion: 1, fuera_de_alcance: 2 } },
       turnos: 15,
       respaldo: { ultimaHora: 4, ultimaEn: "2026-09-26T18:55:00.000Z" },
+      modeloEnUso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z", traceId: "t-interno" },
     };
     estado.leerObservabilidad.mockResolvedValue(obs);
     const cuerpo = await (await metricas()).json();
@@ -131,6 +132,8 @@ describe("GET /api/panel/metricas", () => {
       bloqueos: { total: 3, por_motivo: { inyeccion: 1, fuera_de_alcance: 2 } },
       turnos: 15,
       respaldo: { ultima_hora: 4, ultima_en: "2026-09-26T18:55:00.000Z" },
+      // Sin el traceId interno.
+      modelo_en_uso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z" },
     });
   });
 

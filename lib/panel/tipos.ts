@@ -1,8 +1,11 @@
 // Tipos y constantes del panel compartidos por la API y la UI (sin imports de
 // servidor: este módulo también va al navegador).
 
-export const LAMINA_MIN = 1;
-export const LAMINA_MAX = 39;
+import { TRAMOS } from "@/lib/tramos";
+
+// El rango de láminas sale de los tramos (lib/tramos.ts).
+export const LAMINA_MIN = TRAMOS[0].desde;
+export const LAMINA_MAX = TRAMOS[TRAMOS.length - 1].hasta;
 
 export const CLAVES_CAOS = ["herramienta_caida", "latencia_alta", "modelo_caido", "modelos_caidos"] as const;
 export type ClaveCaos = (typeof CLAVES_CAOS)[number];
@@ -46,6 +49,12 @@ export interface MetricasPanel {
         turnos: number;
         // Respuestas servidas por el modelo de respaldo.
         respaldo: { ultima_hora: number; ultima_en: string | null };
+        // Modelo del turno más reciente (sin evals). null = aún no hay turnos.
+        modelo_en_uso: {
+          estado: "principal" | "respaldo" | "sin_modelo";
+          modelo: string | null;
+          en: string;
+        } | null;
       };
   actualizado_en: string;
 }

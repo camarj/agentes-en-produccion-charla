@@ -43,6 +43,25 @@ export interface MetricasTrazas {
   // Respuestas servidas por el modelo de respaldo (FallbackModelo marca
   // `modelo_respaldo: true` en la metadata de `agent_run`).
   respaldo: { ultimaHora: number; ultimaEn: string | null };
+  // Modelo del turno más reciente con respuesta (o que falló porque ningún
+  // modelo respondió). null = todavía no hay turnos.
+  modeloEnUso: ModeloEnUso | null;
+}
+
+// principal: respondió el modelo principal (el nombre sale del span
+// model_generation; null si no se pudo leer). respaldo: FallbackModelo marcó
+// `modelo_respaldo` y `modelo_usado` en la raíz. sin_modelo: fallaron los dos.
+export interface ModeloEnUso {
+  estado: "principal" | "respaldo" | "sin_modelo";
+  modelo: string | null;
+  en: string;
+  traceId: string;
+}
+
+// Span completo (getTrace): solo usamos el tipo y sus atributos.
+export interface SpanCompleto {
+  spanType: string;
+  attributes?: Record<string, unknown> | null;
 }
 
 // Lo que usamos de cada span del detalle de una traza (getTraceLight).
@@ -67,6 +86,8 @@ export interface RamaProcesador {
 export interface StoreTrazas {
   // Detalle liviano de una traza (Postgres y LibSQL lo implementan).
   getTraceLight?(args: { traceId: string }): Promise<{ spans: SpanDetalle[] } | null>;
+  // Traza completa (con atributos): solo para el nombre del modelo principal.
+  getTrace?(args: { traceId: string }): Promise<{ spans: SpanCompleto[] } | null>;
   listTracesLight(args: {
     filters: { entityId: string; startedAt: { start: Date }; hasChildError?: boolean };
     pagination: { page: number; perPage: number };
@@ -173,6 +194,14 @@ export function calcularMetricasTrazas(
   let turnos = 0;
   let respaldoHora = 0;
   let ultimoRespaldo = Number.NEGATIVE_INFINITY;
+  let modeloEnUso: ModeloEnUso | null = null;
+  let inicioModelo = Number.NEGATIVE_INFINITY;
+  const candidatoModelo = (r: RaizTraza, inicio: number, estado: ModeloEnUso["estado"]) => {
+    if (!(inicio > inicioModelo)) return;
+    inicioModelo = inicio;
+    const usado = typeof r.metadata?.modelo_usado === "string" && r.metadata.modelo_usado ? r.metadata.modelo_usado : null;
+    modeloEnUso = { estado, modelo: estado === "sin_modelo" ? null : usado, en: new Date(inicio).toISOString(), traceId: r.traceId };
+  };
 
   for (const r of raices) {
     const inicio = ms(r.startedAt);
@@ -198,11 +227,16 @@ export function calcularMetricasTrazas(
     }
 
     const tipo = tipoDeFalla(r, detalle.get(r.traceId), trazasConErrorHijo.has(r.traceId));
+    const sinRespuesta = r.status === "error" || (r.error != null && r.error !== false) || trazasConErrorHijo.has(r.traceId);
+    // Modelo en uso: turnos terminados que respondieron (o en los que ningún modelo pudo).
+    if (tipo === "modelo") candidatoModelo(r, inicio, "sin_modelo");
+    else if (r.status !== "running" && (tipo === null || (tipo === "herramienta" && !sinRespuesta))) {
+      candidatoModelo(r, inicio, r.metadata?.modelo_respaldo === true ? "respaldo" : "principal");
+    }
     if (tipo) {
       errores++;
       erroresPorTipo[tipo] = (erroresPorTipo[tipo] ?? 0) + 1;
       // Una falla de herramienta con respuesta completa sigue contando en la latencia.
-      const sinRespuesta = r.status === "error" || (r.error != null && r.error !== false) || trazasConErrorHijo.has(r.traceId);
       if (sinRespuesta || tipo !== "herramienta") continue;
     }
 
@@ -220,6 +254,7 @@ export function calcularMetricasTrazas(
       ultimaHora: respaldoHora,
       ultimaEn: Number.isFinite(ultimoRespaldo) ? new Date(ultimoRespaldo).toISOString() : null,
     },
+    modeloEnUso,
   };
 }
 
@@ -285,6 +320,22 @@ async function detalleDeFallas(store: StoreTrazas, traceIds: string[]): Promise<
   return salida;
 }
 
+// Nombre del modelo principal: atributo `model` del span model_generation de
+// la traza (una sola lectura completa). null si no se puede leer.
+async function modeloDeLaTraza(store: StoreTrazas, traceId: string): Promise<string | null> {
+  if (typeof store.getTrace !== "function") return null;
+  try {
+    const t = await store.getTrace({ traceId });
+    for (const s of t?.spans ?? []) {
+      const modelo = s.spanType === "model_generation" ? s.attributes?.model : undefined;
+      if (typeof modelo === "string" && modelo) return modelo;
+    }
+  } catch {
+    // sin nombre: el panel muestra «—»
+  }
+  return null;
+}
+
 function conTope<T>(promesa: Promise<T>, tiempoMs: number): Promise<T> {
   let temporizador: ReturnType<typeof setTimeout> | undefined;
   const tope = new Promise<never>((_, rechazar) => {
@@ -323,7 +374,11 @@ export async function leerMetricasTrazas(
           .filter((r) => !bloqueosEnHijos.has(r.traceId) && esCandidataAFalla(r, trazasConErrorHijo))
           .map((r) => r.traceId);
         const detalle = await detalleDeFallas(store, candidatas);
-        return calcularMetricasTrazas(raices, { ahora: momento, trazasConErrorHijo, bloqueosEnHijos, detalle });
+        const m = calcularMetricasTrazas(raices, { ahora: momento, trazasConErrorHijo, bloqueosEnHijos, detalle });
+        if (m.modeloEnUso?.estado === "principal" && !m.modeloEnUso.modelo) {
+          m.modeloEnUso = { ...m.modeloEnUso, modelo: await modeloDeLaTraza(store, m.modeloEnUso.traceId) };
+        }
+        return m;
       })(),
       timeoutMs,
     );

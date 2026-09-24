@@ -7,7 +7,7 @@ import { horaCorta } from "@/lib/panel/formato";
 import { cn } from "@/lib/utils";
 import { ColaEscalamientos } from "./cola-escalamientos";
 import { InterruptoresCaos, KillSwitch } from "./interruptores";
-import { SelectorLamina } from "./lamina";
+import { SelectorTramo } from "./lamina";
 import { Metricas } from "./metricas";
 import { usePanel } from "./use-panel";
 
@@ -64,7 +64,7 @@ export function Panel({ studioUrl }: { studioUrl: string | null }) {
         {interruptores ? (
           <>
             <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-              <SelectorLamina
+              <SelectorTramo
                 valor={interruptores.valores.lamina_actual}
                 onCambiar={(n) => void cambiarInterruptor("lamina_actual", n)}
               />

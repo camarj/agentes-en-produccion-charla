@@ -28,8 +28,9 @@ export const INTERVALO_REINTENTO_MS = 20_000;
 // Tras estos reintentos fallidos con el asistente en pausa (~1 min), el aviso
 // pasa a «Estamos presentando fallas…». Se sigue reintentando igual.
 export const REINTENTOS_ANTES_DE_AVISO = 3;
-// Las sugerencias cambian con la lámina actual: se vuelven a pedir cada 30 s.
-export const INTERVALO_SUGERENCIAS_MS = 30_000;
+// Las sugerencias cambian con el tramo que elige el speaker en el panel: se
+// vuelven a pedir cada 5 s (y al volver a la pestaña o enfocarla).
+export const INTERVALO_SUGERENCIAS_MS = 5_000;
 // Pregunta en espera (423) guardada en este navegador: sobrevive a una recarga.
 export const CLAVE_PENDIENTE = "charla:pregunta-pendiente";
 
@@ -233,7 +234,7 @@ export function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sugerencias vivas: siguen la lámina actual (cada 30 s y al volver a la pestaña).
+  // Sugerencias vivas: siguen la lámina actual (cada 5 s y al volver a la pestaña).
   useEffect(() => {
     let vigente = true;
     const refrescar = async () => {

@@ -11,6 +11,7 @@ import { POST as identificar } from "./identificar/route";
 import { POST as perfil } from "./perfil/route";
 import { GET as sesion } from "./sesion/route";
 import { GET as sugerencias } from "./sugerencias/route";
+import { TRAMOS } from "@/lib/tramos";
 
 // Las rutas usan los repositorios por defecto; aquí apuntan a una base temporal.
 const estado = vi.hoisted(() => ({
@@ -234,7 +235,7 @@ describe("GET /api/sugerencias", () => {
     return lista as string[];
   }
 
-  it("nunca se guarda en caché (el chat las vuelve a pedir cada 30 s)", async () => {
+  it("nunca se guarda en caché (el chat las vuelve a pedir cada 5 s)", async () => {
     const { cookie } = await identificarCon(`nc${ipSiguiente}@e.com`);
     const r = await sugerencias(peticion("/api/sugerencias", { cookie }));
     expect(r.headers.get("cache-control")).toBe("no-store");
@@ -257,6 +258,13 @@ describe("GET /api/sugerencias", () => {
     expect(await sugerenciasEn("39")).toEqual(t3);
     expect(t3.join(" ")).toMatch(/resiliencia|guardrail|eval|observabilidad/i);
     expect(t3).not.toEqual(t2);
+  });
+
+  it("salen del módulo compartido de tramos (el mismo que usa el panel)", async () => {
+    for (const t of TRAMOS) {
+      expect(await sugerenciasEn(String(t.desde))).toEqual([...t.preguntas]);
+      expect(await sugerenciasEn(String(t.hasta))).toEqual([...t.preguntas]);
+    }
   });
 
   it("lámina fuera de rango o inválida usa el tramo más cercano o el primero", async () => {

@@ -61,3 +61,15 @@ export function desgloseFallas(porTipo: Partial<Record<string, number>>): string
   const partes = TIPOS_FALLA.filter(([t]) => (porTipo[t] ?? 0) > 0).map(([t, etiqueta]) => `${porTipo[t]} ${etiqueta}`);
   return partes.length > 0 ? partes.join(" · ") : null;
 }
+
+// «openai/gpt-6-luna» → «gpt-6-luna». null si no hay nombre.
+export function nombreModelo(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return id.slice(id.lastIndexOf("/") + 1) || null;
+}
+
+// «respaldo: 2 respuestas en la última hora · la última a las 12:31»
+export function resumenRespaldo(ultimaHora: number, ultimaEn: string | null): string {
+  const base = `respaldo: ${ultimaHora} ${ultimaHora === 1 ? "respuesta" : "respuestas"} en la última hora`;
+  return ultimaEn ? `${base} · la última a las ${horaCorta(ultimaEn)}` : base;
+}

@@ -1,79 +1,53 @@
 "use client";
 
-import { MinusIcon, PlusIcon } from "lucide-react";
-import { useState } from "react";
 import { FOCO } from "@/components/acceso/marco";
-import { LAMINA_MAX, LAMINA_MIN, acotarLamina } from "@/lib/panel/tipos";
+import { TRAMOS, etiquetaTramo, tramoDeLamina } from "@/lib/tramos";
 import { cn } from "@/lib/utils";
 
-const BOTON = cn(
-  "inline-flex size-16 items-center justify-center rounded-xl border border-border bg-background text-foreground hover:bg-muted disabled:opacity-40",
-  FOCO,
-);
-
-// Lámina actual (1–39): stepper − / + y campo numérico. Enter o salir del campo
-// guarda; un número fuera de rango se lleva al límite más cercano.
-export function SelectorLamina({ valor, onCambiar }: { valor: number; onCambiar: (n: number) => void }) {
-  const [editando, setEditando] = useState(false);
-  const [texto, setTexto] = useState("");
-  const mostrado = editando ? texto : String(valor);
-
-  function confirmar() {
-    setEditando(false);
-    if (!/^\s*-?\d+\s*$/.test(texto)) return;
-    const n = acotarLamina(Number(texto));
-    if (n !== valor) onCambiar(n);
-  }
+// Tramo de la presentación (lib/tramos.ts): un botón grande por tramo. Elegir
+// uno guarda `lamina_actual` = su última lámina, así el agente puede hablar de
+// todo el tramo y el chat muestra sus 3 preguntas (lo pide cada 5 s).
+// El elegido se ve relleno en blanco: el acento queda para foco, enlaces y enviar.
+export function SelectorTramo({ valor, onCambiar }: { valor: number; onCambiar: (n: number) => void }) {
+  const actual = tramoDeLamina(valor);
 
   return (
-    <section aria-labelledby="titulo-lamina" className="rounded-xl border border-border bg-card p-5">
-      <h2 id="titulo-lamina" className="text-xl font-medium">
-        Lámina actual
+    <section aria-labelledby="titulo-tramo" className="rounded-xl border border-border bg-card p-5">
+      <h2 id="titulo-tramo" className="text-xl font-medium">
+        Tramo de la presentación
       </h2>
-      <p className="text-base text-muted-foreground">Cambia las preguntas sugeridas del chat.</p>
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          type="button"
-          aria-label="Lámina anterior"
-          className={BOTON}
-          disabled={valor <= LAMINA_MIN}
-          onClick={() => onCambiar(acotarLamina(valor - 1))}
-        >
-          <MinusIcon className="size-7" aria-hidden="true" />
-        </button>
-        <input
-          aria-label="Número de lámina"
-          inputMode="numeric"
-          className={cn(
-            "h-16 w-28 rounded-xl border border-border bg-background text-center font-mono text-[40px] tabular-nums",
-            FOCO,
-          )}
-          value={mostrado}
-          onFocus={() => {
-            setTexto(String(valor));
-            setEditando(true);
-          }}
-          onChange={(e) => {
-            setTexto(e.target.value);
-            setEditando(true);
-          }}
-          onBlur={() => editando && confirmar()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") confirmar();
-            if (e.key === "Escape") setEditando(false);
-          }}
-        />
-        <button
-          type="button"
-          aria-label="Lámina siguiente"
-          className={BOTON}
-          disabled={valor >= LAMINA_MAX}
-          onClick={() => onCambiar(acotarLamina(valor + 1))}
-        >
-          <PlusIcon className="size-7" aria-hidden="true" />
-        </button>
-        <span className="font-mono text-xl text-muted-foreground">de {LAMINA_MAX}</span>
+      <div className="mt-3 flex flex-col gap-2">
+        {TRAMOS.map((t) => {
+          const elegido = t.id === actual.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={elegido}
+              className={cn(
+                "flex h-14 items-center rounded-xl border px-4 text-left text-xl font-medium",
+                elegido
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border bg-background text-foreground hover:bg-muted",
+                FOCO,
+              )}
+              onClick={() => {
+                if (!elegido) onCambiar(t.hasta);
+              }}
+            >
+              {etiquetaTramo(t)}
+            </button>
+          );
+        })}
       </div>
+      <h3 id="titulo-preguntas" className="mt-4 text-base text-muted-foreground">
+        Preguntas sugeridas ahora
+      </h3>
+      <ul aria-labelledby="titulo-preguntas" className="mt-1 flex flex-col gap-1 text-base leading-snug">
+        {actual.preguntas.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EstadoInterruptores, FilaEscalamiento, MetricasPanel } from "@/lib/panel/tipos";
+import { TRAMOS } from "@/lib/tramos";
 import { Panel } from "./panel";
 
 const json = (cuerpo: unknown, status = 200) =>
@@ -25,6 +26,7 @@ function metricasBase(): MetricasPanel {
       bloqueos: { total: 4, por_motivo: { fuera_de_alcance: 3, inyeccion: 1 } },
       turnos: 20,
       respaldo: { ultima_hora: 3, ultima_en: "2026-09-26T17:58:00.000Z" },
+      modelo_en_uso: { estado: "principal", modelo: "gpt-6-luna", en: "2026-09-26T17:59:00.000Z" },
     },
     actualizado_en: "2026-09-26T18:00:00.000Z",
   };
@@ -92,8 +94,7 @@ describe("Panel del speaker", () => {
     await montar();
     expect(within(metrica("Fallas técnicas")).getByText("0")).toBeTruthy();
     expect(within(metrica("Fallas técnicas")).queryByText(/tiempo agotado/)).toBeNull();
-    expect(within(metrica("Modelo de respaldo")).getByText("0")).toBeTruthy();
-    expect(within(metrica("Modelo de respaldo")).getByText("última hora")).toBeTruthy();
+    expect(within(metrica("Modelo en uso")).getByText("respaldo: 0 respuestas en la última hora")).toBeTruthy();
   });
 
   it("con «Modelo caído» encendido, su fila dice que responde el respaldo", async () => {
@@ -118,9 +119,9 @@ describe("Panel del speaker", () => {
     expect(within(fallas).getByText("4")).toBeTruthy();
     expect(within(fallas).getByText("fallas de herramientas o modelos (12 h)")).toBeTruthy();
     expect(within(fallas).getByText("1 herramienta · 1 modelo · 2 tiempo agotado")).toBeTruthy();
-    const respaldo = metrica("Modelo de respaldo");
-    expect(within(respaldo).getByText("3")).toBeTruthy();
-    expect(within(respaldo).getByText(/última hora · la última a las \d{2}:\d{2}/)).toBeTruthy();
+    const modelo = metrica("Modelo en uso");
+    expect(within(modelo).getByText("gpt-6-luna")).toBeTruthy();
+    expect(within(modelo).getByText(/^respaldo: 3 respuestas en la última hora · la última a las \d{2}:\d{2}$/)).toBeTruthy();
     const bloqueos = metrica("Bloqueos de guardrails");
     expect(within(bloqueos).getByText("4")).toBeTruthy();
     expect(within(bloqueos).getByText(/Fuera de alcance 3/)).toBeTruthy();
@@ -141,7 +142,7 @@ describe("Panel del speaker", () => {
   it("observabilidad no disponible: «—» en latencia, errores y bloqueos; el resto se ve", async () => {
     metricas.observabilidad = { disponible: false };
     await montar();
-    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Fallas técnicas", "Bloqueos de guardrails", "Modelo de respaldo"]) {
+    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Fallas técnicas", "Bloqueos de guardrails", "Modelo en uso"]) {
       expect(within(metrica(nombre)).getByText("—")).toBeTruthy();
     }
     expect(screen.getByText(/Trazas no disponibles por ahora/)).toBeTruthy();
@@ -171,34 +172,90 @@ describe("Panel del speaker", () => {
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
   });
 
-  describe("lámina actual", () => {
-    it("stepper − / + guarda la lámina", async () => {
-      const u = userEvent.setup();
+  describe("modelo en uso", () => {
+    const obs = () => metricas.observabilidad as Extract<MetricasPanel["observabilidad"], { disponible: true }>;
+    const valor = () => within(metrica("Modelo en uso")).getByTestId("modelo-en-uso");
+
+    it("principal: solo el nombre del modelo, sin proveedor", async () => {
+      obs().modelo_en_uso = { estado: "principal", modelo: "openai/gpt-6-luna", en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      await u.click(screen.getByRole("button", { name: "Lámina siguiente" }));
-      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 13 } });
-      await waitFor(() => expect((screen.getByLabelText("Número de lámina") as HTMLInputElement).value).toBe("13"));
-      await u.click(screen.getByRole("button", { name: "Lámina anterior" }));
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 12 });
+      expect(valor().textContent).toBe("gpt-6-luna");
+      expect(valor().className).not.toMatch(/amber|red/);
     });
 
-    it("campo numérico: Enter guarda, y lo lleva al rango 1–39", async () => {
-      const u = userEvent.setup();
+    it("respaldo: «claude-sonnet-5 · respaldo» resaltado en ámbar", async () => {
+      obs().modelo_en_uso = { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T17:59:00.000Z" };
+      obs().respaldo = { ultima_hora: 1, ultima_en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      const campo = screen.getByLabelText("Número de lámina");
-      await u.clear(campo);
-      await u.type(campo, "45{Enter}");
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 39 });
-      await u.clear(campo);
-      await u.type(campo, "0{Enter}");
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 1 });
+      expect(valor().textContent).toBe("claude-sonnet-5 · respaldo");
+      expect(valor().className).toMatch(/amber/);
+      expect(within(metrica("Modelo en uso")).getByText(/^respaldo: 1 respuesta en la última hora · la última a las \d{2}:\d{2}$/)).toBeTruthy();
     });
 
-    it("en los límites se deshabilita el botón correspondiente", async () => {
-      estadoInt.valores.lamina_actual = 39;
+    it("fallan los dos: «Sin modelo · falla técnica» en rojo", async () => {
+      obs().modelo_en_uso = { estado: "sin_modelo", modelo: null, en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      await waitFor(() => expect((screen.getByRole("button", { name: "Lámina siguiente" }) as HTMLButtonElement).disabled).toBe(true));
-      expect((screen.getByRole("button", { name: "Lámina anterior" }) as HTMLButtonElement).disabled).toBe(false);
+      expect(valor().textContent).toBe("Sin modelo · falla técnica");
+      expect(valor().className).toMatch(/red/);
+    });
+
+    it("sin turnos todavía o sin dato del modelo: «—»", async () => {
+      obs().modelo_en_uso = null;
+      await montar();
+      expect(valor().textContent).toBe("—");
+      cleanup();
+      metricas = metricasBase();
+      obs().modelo_en_uso = { estado: "principal", modelo: null, en: "2026-09-26T17:59:00.000Z" };
+      await montar();
+      expect(valor().textContent).toBe("—");
+    });
+
+    it("no hay tarjeta «Modelo de respaldo» (la reemplaza «Modelo en uso»)", async () => {
+      await montar();
+      expect(screen.queryByRole("group", { name: "Modelo de respaldo" })).toBeNull();
+    });
+  });
+
+  describe("tramo de la presentación", () => {
+    const boton = (i: number) => screen.getByRole("button", { name: `Láminas ${TRAMOS[i].desde}–${TRAMOS[i].hasta} · ${TRAMOS[i].nombre}` });
+
+    it("3 botones, uno por tramo; la lámina guardada marca su tramo", async () => {
+      estadoInt.valores.lamina_actual = 20;
+      await montar();
+      await waitFor(() => expect(boton(1).getAttribute("aria-pressed")).toBe("true"));
+      expect(boton(0).getAttribute("aria-pressed")).toBe("false");
+      expect(boton(2).getAttribute("aria-pressed")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Lámina siguiente" })).toBeNull();
+    });
+
+    it("elegir un tramo guarda su última lámina en lamina_actual", async () => {
+      const u = userEvent.setup();
+      await montar();
+      await u.click(boton(2));
+      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 39 } });
+      await waitFor(() => expect(boton(2).getAttribute("aria-pressed")).toBe("true"));
+      await u.click(boton(1));
+      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 31 });
+    });
+
+    it("elegir el tramo que ya está elegido no guarda nada", async () => {
+      const u = userEvent.setup();
+      await montar();
+      await u.click(boton(0));
+      expect(posts).toHaveLength(0);
+    });
+
+    it("muestra las 3 preguntas que ven ahora los asistentes", async () => {
+      const u = userEvent.setup();
+      await montar();
+      const vista = screen.getByRole("list", { name: "Preguntas sugeridas ahora" });
+      expect(within(vista).getAllByRole("listitem").map((li) => li.textContent)).toEqual([...TRAMOS[0].preguntas]);
+      await u.click(boton(1));
+      await waitFor(() =>
+        expect(within(screen.getByRole("list", { name: "Preguntas sugeridas ahora" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+          ...TRAMOS[1].preguntas,
+        ]),
+      );
     });
   });
 

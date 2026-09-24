@@ -81,6 +81,7 @@ describe("calcularMetricasTrazas", () => {
       bloqueos: { total: 0, porMotivo: {} },
       turnos: 0,
       respaldo: { ultimaHora: 0, ultimaEn: null },
+      modeloEnUso: null,
     });
   });
 
@@ -474,5 +475,91 @@ describe("leerMetricasTrazas · detalle de fallas", () => {
     const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
     expect(store.getTraceLight).not.toHaveBeenCalled();
     expect(m).toMatchObject({ errores: 0, respaldo: { ultimaHora: 1 } });
+  });
+});
+
+describe("modelo en uso (el del turno más reciente con respuesta)", () => {
+  it("respaldo: el turno más reciente lo respondió el respaldo (modelo_usado en la raíz)", () => {
+    const m = calcularMetricasTrazas(
+      [traza({ haceMin: 10 }), traza({ haceMin: 2, metadata: { modelo_respaldo: true, modelo_usado: "anthropic/claude-sonnet-5" } })],
+      { ahora: AHORA },
+    );
+    expect(m.modeloEnUso).toMatchObject({ estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: hace(2).toISOString() });
+  });
+
+  it("principal: sin marca de respaldo (el modelo se completa después con el span model_generation)", () => {
+    const reciente = traza({ haceMin: 1 });
+    const m = calcularMetricasTrazas([traza({ haceMin: 5, metadata: { modelo_respaldo: true } }), reciente], { ahora: AHORA });
+    expect(m.modeloEnUso).toEqual({ estado: "principal", modelo: null, en: hace(1).toISOString(), traceId: reciente.traceId });
+  });
+
+  it("sin modelo: el turno más reciente falló porque ningún modelo respondió", () => {
+    const caida = traza({ haceMin: 1, status: "error", error: { name: "AI_APICallError", message: "Overloaded" } });
+    const m = calcularMetricasTrazas([traza({ haceMin: 5 }), caida], {
+      ahora: AHORA,
+      detalle: new Map([[caida.traceId, [span("model_generation", { message: "Overloaded" })]]]),
+    });
+    expect(m.modeloEnUso).toMatchObject({ estado: "sin_modelo", modelo: null, en: hace(1).toISOString() });
+  });
+
+  it("ignora evals, bloqueos, turnos en curso y otras fallas sin respuesta", () => {
+    const buena = traza({ haceMin: 30, metadata: { modelo_respaldo: true, modelo_usado: "anthropic/claude-sonnet-5" } });
+    const hijoBloqueado = traza({ haceMin: 3, status: "running", endedAt: null });
+    const m = calcularMetricasTrazas(
+      [
+        buena,
+        traza({ haceMin: 1, metadata: { origen: "eval" } }),
+        traza({ haceMin: 2, metadata: { guardrail: "g", motivo: "inyeccion" } }),
+        hijoBloqueado,
+        traza({ haceMin: 4, status: "running", endedAt: null }),
+        traza({ haceMin: 5, status: "error", error: { message: "boom" } }),
+      ],
+      { ahora: AHORA, bloqueosEnHijos: new Map([[hijoBloqueado.traceId, "fuera_de_alcance"]]) },
+    );
+    expect(m.modeloEnUso).toMatchObject({ estado: "respaldo", en: hace(30).toISOString() });
+  });
+
+  it("una falla de herramienta con respuesta sí cuenta (el modelo respondió)", () => {
+    const m = calcularMetricasTrazas([traza({ haceMin: 1, metadata: { falla_herramienta: true } })], { ahora: AHORA });
+    expect(m.modeloEnUso).toMatchObject({ estado: "principal" });
+  });
+
+  it("null si no hubo turnos con respuesta", () => {
+    expect(calcularMetricasTrazas([traza({ metadata: { origen: "eval" } })], { ahora: AHORA }).modeloEnUso).toBeNull();
+  });
+});
+
+describe("leerMetricasTrazas · modelo en uso", () => {
+  const conTraza = (raices: RaizTraza[], spans: Array<{ spanType: string; attributes?: Record<string, unknown> | null }>) => ({
+    ...storeFalso(raices),
+    getTrace: vi.fn(async ({ traceId }: { traceId: string }) => ({ traceId, spans })),
+  });
+
+  it("principal: lee el modelo del span model_generation (una sola traza)", async () => {
+    const vieja = traza({ haceMin: 9 });
+    const reciente = traza({ haceMin: 1 });
+    const store = conTraza([vieja, reciente], [
+      { spanType: "agent_run", attributes: {} },
+      { spanType: "model_generation", attributes: { model: "gpt-6-luna", provider: "openai.responses" } },
+    ]);
+    const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
+    expect(m?.modeloEnUso).toMatchObject({ estado: "principal", modelo: "gpt-6-luna" });
+    expect(store.getTrace.mock.calls.map((c) => c[0].traceId)).toEqual([reciente.traceId]);
+  });
+
+  it("respaldo o sin modelo: no pide la traza completa", async () => {
+    const store = conTraza([traza({ metadata: { modelo_respaldo: true, modelo_usado: "anthropic/claude-sonnet-5" } })], []);
+    const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
+    expect(m?.modeloEnUso).toMatchObject({ estado: "respaldo", modelo: "anthropic/claude-sonnet-5" });
+    expect(store.getTrace).not.toHaveBeenCalled();
+  });
+
+  it("si la traza no se puede leer o no trae el modelo: principal con modelo null (el panel muestra «—»)", async () => {
+    const t = traza();
+    const falla = { ...storeFalso([t]), getTrace: vi.fn(async () => Promise.reject(new Error("x"))) };
+    expect((await leerMetricasTrazas(async () => falla, { ahora: () => AHORA }))?.modeloEnUso).toMatchObject({ estado: "principal", modelo: null });
+    const sinModelo = conTraza([t], [{ spanType: "model_generation", attributes: null }]);
+    expect((await leerMetricasTrazas(async () => sinModelo, { ahora: () => AHORA }))?.modeloEnUso).toMatchObject({ modelo: null });
+    expect((await leerMetricasTrazas(async () => storeFalso([t]), { ahora: () => AHORA }))?.modeloEnUso).toMatchObject({ modelo: null });
   });
 });

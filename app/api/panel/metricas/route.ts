@@ -21,6 +21,9 @@ function observabilidad(m: MetricasTrazas | null): MetricasPanel["observabilidad
     bloqueos: { total: m.bloqueos.total, por_motivo: m.bloqueos.porMotivo },
     turnos: m.turnos,
     respaldo: { ultima_hora: m.respaldo.ultimaHora, ultima_en: m.respaldo.ultimaEn },
+    modelo_en_uso: m.modeloEnUso
+      ? { estado: m.modeloEnUso.estado, modelo: m.modeloEnUso.modelo, en: m.modeloEnUso.en }
+      : null,
   };
 }
 
