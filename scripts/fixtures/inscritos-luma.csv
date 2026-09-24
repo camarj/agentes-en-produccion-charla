@@ -1,0 +1,5 @@
+guest_id,first_name,last_name,email,¿A qué te dedicas?  (cargo o profesión),¿Qué construyes o quieres construir con IA?
+g-001,Ana,Pruebas, Ana.Pruebas@Ejemplo.test ,Desarrolladora backend,Un agente de soporte
+g-002,Beto,Ficticio,beto@ejemplo.test,,Automatizar reportes
+g-003,Caro,Inventada,esto-no-es-un-email,CTO,Nada
+g-004,Dani,Simulado,dani@ejemplo.test,Estudiante,

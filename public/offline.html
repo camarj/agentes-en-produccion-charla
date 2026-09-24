@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>Sin conexión · Agentes en producción</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000000; color: #ffffff; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+        padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+        box-sizing: border-box;
+      }
+      main { max-width: 360px; text-align: center; }
+      img { width: 64px; height: 64px; border-radius: 16px; }
+      h1 { font-size: 20px; font-weight: 600; margin: 20px 0 8px; }
+      p { color: #a1a1aa; line-height: 1.5; margin: 0 0 24px; }
+      button {
+        min-height: 44px; padding: 0 20px; border-radius: 999px; font: inherit; font-weight: 500;
+        background: transparent; color: #ffffff; border: 1px solid #27272a; cursor: pointer;
+      }
+      button:focus-visible { outline: 2px solid oklch(84% 0.16 215); outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>Sin conexión</h1>
+      <p>Sin conexión. Vuelve a intentarlo cuando tengas señal.</p>
+      <button type="button" onclick="location.reload()">Reintentar</button>
+    </main>
+  </body>
+</html>
