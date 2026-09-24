@@ -66,6 +66,19 @@ export function costeEstimadoTurno(modelo: string | undefined, uso: UsoTokens | 
   return precioDe(modelo, uso) + precioDe(MODELO_LIGERO, TOKENS_AUXILIARES_POR_TURNO);
 }
 
+// Dictado por voz: gpt-transcribe cuesta $0,0045 por minuto de audio
+// (developers.openai.com/api/docs/pricing, verificado el 2026-09-24).
+export const PRECIO_TRANSCRIPCION_USD_POR_MINUTO = 0.0045;
+const DURACION_MAXIMA_COBRO_S = 60;
+
+// Coste de un dictado según su duración en segundos. Si falta, no es válida o
+// pasa del tope de 60 s, se cobra el máximo (para no quedarse corto).
+export function costeTranscripcion(segundos: number | undefined): number {
+  const valida = typeof segundos === "number" && Number.isFinite(segundos) && segundos > 0;
+  const s = valida ? Math.min(segundos, DURACION_MAXIMA_COBRO_S) : DURACION_MAXIMA_COBRO_S;
+  return (s / 60) * PRECIO_TRANSCRIPCION_USD_POR_MINUTO;
+}
+
 // Tope en USD, o null si PRESUPUESTO_MAX_USD falta o no es un número positivo.
 export function presupuestoMaximoUsd(): number | null {
   const valor = Number(process.env.PRESUPUESTO_MAX_USD?.trim() || Number.NaN);

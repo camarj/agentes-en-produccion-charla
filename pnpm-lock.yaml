@@ -41,6 +41,9 @@ importers:
       '@mastra/pg':
         specifier: 1.26.0
         version: 1.26.0(@mastra/core@1.69.0(ai@7.0.112(zod@4.6.5))(express@5.2.1)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5))
+      '@mastra/voice-openai':
+        specifier: 0.13.2
+        version: 0.13.2(ws@8.21.3)(zod@4.6.5)
       ai:
         specifier: 7.0.112
         version: 7.0.112(zod@4.6.5)
@@ -1190,6 +1193,12 @@ packages:
     engines: {node: '>=22.13.0'}
     peerDependencies:
       '@mastra/core': '>=1.58.0-0 <2.0.0-0'
+      zod: ^3.25.0 || ^4.0.0
+
+  '@mastra/voice-openai@0.13.2':
+    resolution: {integrity: sha512-cjXE/4bOyrZmwfCZSYGJkHsXYbLTpWFq+sY2/cLvAgJ/x4mmlsu8zHUo94Q1Gxo81hdFNwMn0XX6EwsJKfSCJg==}
+    engines: {node: '>=22.13.0'}
+    peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
   '@modelcontextprotocol/sdk@1.30.0':
@@ -4248,6 +4257,26 @@ packages:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
 
+  openai@6.49.0:
+    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      ws: ^8.18.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   openapi-fetch@0.17.0:
     resolution: {integrity: sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==}
 
@@ -6557,6 +6586,16 @@ snapshots:
       '@mastra/core': 1.69.0(ai@7.0.112(zod@4.6.5))(express@5.2.1)(zod-to-json-schema@3.25.2(zod@4.6.5))(zod@4.6.5)
       hono: 4.13.8
       zod: 4.6.5
+
+  '@mastra/voice-openai@0.13.2(ws@8.21.3)(zod@4.6.5)':
+    dependencies:
+      openai: 6.49.0(ws@8.21.3)(zod@4.6.5)
+      zod: 4.6.5
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - ws
 
   '@modelcontextprotocol/sdk@1.30.0(zod@3.25.76)':
     dependencies:
@@ -9724,6 +9763,11 @@ snapshots:
       define-lazy-prop: 2.0.0
       is-docker: 2.2.1
       is-wsl: 2.2.0
+
+  openai@6.49.0(ws@8.21.3)(zod@4.6.5):
+    optionalDependencies:
+      ws: 8.21.3
+      zod: 4.6.5
 
   openapi-fetch@0.17.0:
     dependencies:

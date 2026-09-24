@@ -2,6 +2,7 @@
 
 import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
+import { BotonDictado } from "./dictado";
 import { FOCO } from "@/components/acceso/marco";
 import { LARGO_MAXIMO_PREGUNTA } from "@/lib/chat";
 import { TEXTOS, alturaComposer, contador, largoPregunta } from "@/lib/chat-ui";
@@ -15,6 +16,8 @@ export interface PropsComposer {
   // Hay una respuesta en curso: el botón pasa a «Detener».
   ocupado: boolean;
   deshabilitado: boolean;
+  // 423 al dictar: el asistente está en pausa.
+  onPausaDictado?: (mensaje: string) => void;
 }
 
 // En teléfonos (puntero táctil) Enter hace salto de línea y se envía con el botón.
@@ -22,8 +25,13 @@ function esMovil(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 }
 
-export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, deshabilitado }: PropsComposer) {
+export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, deshabilitado, onPausaDictado }: PropsComposer) {
   const caja = useRef<HTMLTextAreaElement>(null);
+  // El dictado termina segundos después: se une al texto que haya en ese momento.
+  const valorActual = useRef(valor);
+  useLayoutEffect(() => {
+    valorActual.current = valor;
+  }, [valor]);
   const cuenta = contador(valor.length);
   const puedeEnviar = !deshabilitado && !ocupado && largoPregunta(valor) >= 1;
 
@@ -36,6 +44,20 @@ export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, desha
     t.style.height = `${alto}px`;
     t.style.overflowY = conScroll ? "auto" : "hidden";
   }, [valor]);
+
+  // El texto dictado se agrega al final para que la persona lo revise; no se envía solo.
+  function insertarDictado(texto: string) {
+    const previo = valorActual.current.trimEnd();
+    const unido = (previo ? `${previo} ${texto}` : texto).slice(0, LARGO_MAXIMO_PREGUNTA);
+    valorActual.current = unido;
+    onCambiar(unido);
+    requestAnimationFrame(() => {
+      const t = caja.current;
+      if (!t) return;
+      t.focus();
+      t.setSelectionRange(unido.length, unido.length);
+    });
+  }
 
   function enviar() {
     if (puedeEnviar) onEnviar(valor.trim());
@@ -77,8 +99,7 @@ export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, desha
           {cuenta}
         </span>
       )}
-      {/* Espacio reservado para el botón de voz (fase 2). */}
-      <span data-reservado="voz" aria-hidden="true" className="size-11 shrink-0" />
+      <BotonDictado deshabilitado={deshabilitado || ocupado} onTexto={insertarDictado} onPausa={onPausaDictado} />
       {ocupado ? (
         <button
           type="button"

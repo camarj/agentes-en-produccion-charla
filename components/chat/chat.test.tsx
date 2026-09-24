@@ -50,6 +50,7 @@ let historial: unknown[];
 let colaChat: Manejador[];
 let fetchSimulado: ReturnType<typeof vi.fn>;
 let enLinea: boolean;
+let transcribir: () => Response;
 
 const SUGERENCIAS = ["¿Qué es el loop de un agente?", "¿Qué es el harness?", "¿Qué diferencia a un agente de un chatbot?"];
 
@@ -58,7 +59,9 @@ beforeEach(() => {
   colaChat = [];
   enLinea = true;
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => enLinea });
-  fetchSimulado = vi.fn(async (url: string, init?: RequestInit) => {
+  transcribir = () => json(200, { texto: "" });
+  fetchSimulado = vi.fn(async (urlCompleta: string, init?: RequestInit) => {
+    const url = urlCompleta.split("?")[0];
     switch (url) {
       case "/api/chat/historial":
         return json(200, { messages: historial });
@@ -67,6 +70,8 @@ beforeEach(() => {
       case "/api/feedback":
       case "/api/chat/nuevo":
         return json(200, { ok: true });
+      case "/api/transcribir":
+        return transcribir();
       case "/api/chat": {
         const siguiente = colaChat.shift();
         if (!siguiente) throw new Error("sin respuesta preparada para /api/chat");
@@ -491,5 +496,51 @@ describe("Chat: sugerencias vivas", () => {
     await montar();
     expect(screen.queryByRole("group", { name: "Preguntas sugeridas" })).toBeNull();
     expect(screen.getAllByRole("button", { name: SUGERENCIAS[0] })).toHaveLength(1);
+  });
+});
+
+describe("Chat: dictado por voz", () => {
+  it("423 al transcribir → banner de pausa y composer bloqueado un rato; conserva el texto y luego se libera", async () => {
+    const pista = { stop: vi.fn() };
+    vi.stubGlobal(
+      "MediaRecorder",
+      class {
+        static isTypeSupported = () => true;
+        state = "inactive";
+        mimeType = "audio/webm;codecs=opus";
+        ondataavailable: ((e: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        start() {
+          this.state = "recording";
+        }
+        stop() {
+          this.state = "inactive";
+          this.ondataavailable?.({ data: new Blob([new Uint8Array([1])], { type: this.mimeType }) });
+          this.onstop?.();
+        }
+      },
+    );
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => ({ getTracks: () => [pista] }) },
+    });
+    transcribir = () => json(423, { error: "mantenimiento", mensaje: PAUSA });
+    try {
+      await montar();
+      await userEvent.type(caja(), "borrador");
+      await userEvent.click(screen.getByRole("button", { name: "Dictar pregunta" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Detener dictado" }));
+      expect(await screen.findByText(PAUSA)).toBeTruthy();
+      expect(caja().disabled).toBe(true);
+      expect(caja().value).toBe("borrador");
+      // No hay pregunta en espera: no se reintenta /api/chat.
+      expect(llamadasA("/api/chat")).toHaveLength(0);
+      // Pasado el intervalo de reintento se libera para volver a probar.
+      await waitFor(() => expect(caja().disabled).toBe(false));
+      expect(screen.queryByText(PAUSA)).toBeNull();
+      expect(llamadasA("/api/chat")).toHaveLength(0);
+    } finally {
+      Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
+    }
   });
 });

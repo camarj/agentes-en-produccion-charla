@@ -3,8 +3,10 @@ import { crearDbTemporal } from "./db/prueba";
 import {
   PRECIOS_USD_POR_MILLON,
   PRECIO_DESCONOCIDO,
+  PRECIO_TRANSCRIPCION_USD_POR_MINUTO,
   TOKENS_AUXILIARES_POR_TURNO,
   costeEstimadoTurno,
+  costeTranscripcion,
   crearPresupuesto,
   precioDe,
   presupuestoMaximoUsd,
@@ -101,5 +103,29 @@ describe("crearPresupuesto (charla.db)", () => {
     await p.sumar(-3);
     await p.sumar(Number.NaN);
     expect(await p.acumulado()).toBe(0);
+  });
+});
+
+describe("costeTranscripcion (dictado por voz)", () => {
+  it("gpt-transcribe: $0,0045 por minuto de audio", () => {
+    expect(PRECIO_TRANSCRIPCION_USD_POR_MINUTO).toBe(0.0045);
+    expect(costeTranscripcion(60)).toBeCloseTo(0.0045, 12);
+    expect(costeTranscripcion(30)).toBeCloseTo(0.00225, 12);
+  });
+
+  it("duración desconocida, inválida o mayor al tope: se cobra el máximo (60 s), para no quedarse corto", () => {
+    for (const d of [undefined, Number.NaN, -3, 0, 600]) expect(costeTranscripcion(d)).toBeCloseTo(0.0045, 12);
+  });
+
+  it("se suma al acumulado de la charla", async () => {
+    const db = await crearDbTemporal();
+    try {
+      const p = crearPresupuesto(db.fuente);
+      await p.sumar(0.01);
+      await p.sumar(costeTranscripcion(20));
+      expect(await p.acumulado()).toBeCloseTo(0.01 + 0.0015, 12);
+    } finally {
+      db.cerrar();
+    }
   });
 });

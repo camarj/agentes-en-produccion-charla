@@ -121,6 +121,9 @@ export function Chat({
   // 423 seguidos con la misma pregunta en espera.
   const [fallasPausa, setFallasPausa] = useState(0);
   const fallasPausaRef = useRef(0);
+  // 423 al dictar (sin pregunta en espera): banner de pausa y composer
+  // bloqueado durante un intervalo de reintento; luego se puede volver a probar.
+  const [pausaDictado, setPausaDictado] = useState<string | null>(null);
   const enLinea = useEnLinea();
   const viewport = useVisualViewport();
 
@@ -320,7 +323,13 @@ export function Chat({
     if (sugeridas.ok && Array.isArray(sugeridas.datos.sugerencias)) setSugerencias(sugeridas.datos.sugerencias);
   }
 
-  const deshabilitado = cargando || aviso !== null || pendienteRed;
+  useEffect(() => {
+    if (pausaDictado === null) return;
+    const id = window.setTimeout(() => setPausaDictado(null), intervaloReintentoMs);
+    return () => window.clearTimeout(id);
+  }, [pausaDictado, intervaloReintentoMs]);
+
+  const deshabilitado = cargando || aviso !== null || pendienteRed || pausaDictado !== null;
   const grupos = agruparMensajes(messages);
   // Tras 3 reintentos fallidos (la primera respuesta + 3), el aviso cambia.
   const mensajePausa = fallasPausa > REINTENTOS_ANTES_DE_AVISO ? TEXTOS.pausaProlongada : aviso?.mensaje ?? "";
@@ -336,6 +345,7 @@ export function Chat({
       <BannerInstalacion />
       {!enLinea && <BannerSinConexion />}
       {aviso?.tipo === "mantenimiento" && status !== "streaming" && <BannerMantenimiento mensaje={mensajePausa} />}
+      {pausaDictado !== null && aviso?.tipo !== "mantenimiento" && <BannerMantenimiento mensaje={pausaDictado} />}
       <ListaMensajes
         grupos={grupos}
         cargando={cargando}
@@ -359,6 +369,7 @@ export function Chat({
             onDetener={() => void stop()}
             ocupado={ocupado}
             deshabilitado={deshabilitado}
+            onPausaDictado={setPausaDictado}
           />
         </div>
       </div>

@@ -36,6 +36,14 @@ export const TEXTOS = {
   frecuencia: "Vas muy rápido, espera unos segundos",
   errorFeedback: "No pudimos registrar tu valoración. Intenta de nuevo.",
   errorNuevaConversacion: "No pudimos empezar una conversación nueva. Intenta de nuevo.",
+  dictar: "Dictar pregunta",
+  detenerDictado: "Detener dictado",
+  transcribiendo: "Transcribiendo…",
+  grabando: "Grabando",
+  permisoMicrofono: "Activa el permiso del micrófono para dictar. También puedes escribir tu pregunta.",
+  microfonoNoDisponible: "No pudimos usar el micrófono. Puedes escribir tu pregunta.",
+  audioVacio: "No se entendió el audio. Intenta de nuevo.",
+  errorDictado: "No pudimos transcribir el audio. Intenta de nuevo o escribe tu pregunta.",
 } as const;
 
 export const COMO_FUNCIONA = [

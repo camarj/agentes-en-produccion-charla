@@ -47,3 +47,7 @@ export function ipDe(request: Request): string {
 // Chat (T09): 10 mensajes por minuto por asistente (no por IP).
 export const LIMITE_CHAT_POR_MINUTO = 10;
 export const limitadorChat = crearLimitador({ limite: LIMITE_CHAT_POR_MINUTO, ventanaMs: 60_000 });
+
+// Dictado por voz: 10 audios por minuto por asistente.
+export const LIMITE_TRANSCRIBIR_POR_MINUTO = 10;
+export const limitadorTranscribir = crearLimitador({ limite: LIMITE_TRANSCRIBIR_POR_MINUTO, ventanaMs: 60_000 });

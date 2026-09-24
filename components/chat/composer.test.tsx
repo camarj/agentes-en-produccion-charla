@@ -97,9 +97,4 @@ describe("Composer", () => {
     expect(caja().disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Enviar" }) as HTMLButtonElement).disabled).toBe(true);
   });
-
-  it("reserva el espacio del botón de voz (fase 2) sin implementarlo", () => {
-    render(<Envoltura />);
-    expect(document.querySelector("[data-reservado='voz']")?.getAttribute("aria-hidden")).toBe("true");
-  });
 });

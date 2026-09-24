@@ -72,6 +72,7 @@ describe("service worker", () => {
   it.each([
     ["/api/chat", "POST"],
     ["/api/chat", "GET"],
+    ["/api/transcribir", "POST"],
     ["/api/sesion", "GET"],
     ["/api/perfil", "GET"],
     ["/api/sugerencias", "GET"],
