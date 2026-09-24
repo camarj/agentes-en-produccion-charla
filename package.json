@@ -30,6 +30,7 @@
     "@mastra/observability": "1.18.0",
     "@mastra/pg": "1.26.0",
     "@mastra/voice-openai": "0.13.2",
+    "@typesafe-ai/sdk": "0.6.0",
     "ai": "7.0.112",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",

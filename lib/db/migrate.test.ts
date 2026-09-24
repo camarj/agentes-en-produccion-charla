@@ -19,7 +19,7 @@ describe("migraciones", () => {
       expect(nombres).toContain(t);
     }
     const aplicadas = await db.cliente.execute("SELECT nombre FROM _migraciones");
-    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_init.sql", "002_feedback.sql", "003_presupuesto.sql", "004_modelos_caidos.sql"]);
+    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_init.sql", "002_feedback.sql", "003_presupuesto.sql", "004_modelos_caidos.sql", "005_jev.sql"]);
   });
 
   it("activa foreign_keys y WAL al abrir", async () => {

@@ -38,6 +38,14 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
               ? `Actualizado ${horaCorta(actualizadoEn)}`
               : "Cargando…"}
         </p>
+        <a
+          href="/panel/jev"
+          target="_blank"
+          rel="noopener"
+          className={cn("inline-flex items-center gap-2 rounded-lg text-lg text-primary underline-offset-4 hover:underline", FOCO)}
+        >
+          Jev · la sala en vivo
+        </a>
         {studioUrl ? (
           <a
             href={studioUrl}
