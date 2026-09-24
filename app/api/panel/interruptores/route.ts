@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST { clave, valor } → EstadoInterruptores. `valor` es "on" | "off" para
-// los interruptores y un entero 1–39 para `lamina_actual`. El cambio lo ve el
+// los interruptores y un entero 1–40 para `lamina_actual`. El cambio lo ve el
 // chat al instante en este proceso (se limpia la caché de 2 s).
 export async function POST(request: NextRequest) {
   if (!autorizadoPanel(request)) return noAutorizado();

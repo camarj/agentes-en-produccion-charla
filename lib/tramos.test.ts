@@ -6,8 +6,8 @@ describe("TRAMOS", () => {
   it("son 3 tramos contiguos que cubren todas las láminas, con 3 preguntas cada uno", () => {
     expect(TRAMOS.map((t) => [t.desde, t.hasta, t.nombre])).toEqual([
       [1, 13, "Conceptos"],
-      [14, 31, "Decisión y diseño"],
-      [32, 39, "En producción"],
+      [14, 32, "Decisión y diseño"],
+      [33, 40, "En producción"],
     ]);
     expect(TRAMOS[0].desde).toBe(LAMINA_MIN);
     expect(TRAMOS.at(-1)!.hasta).toBe(LAMINA_MAX);
@@ -25,9 +25,10 @@ describe("tramoDeLamina", () => {
     expect(tramoDeLamina(1)).toBe(TRAMOS[0]);
     expect(tramoDeLamina(13)).toBe(TRAMOS[0]);
     expect(tramoDeLamina(14)).toBe(TRAMOS[1]);
-    expect(tramoDeLamina(31)).toBe(TRAMOS[1]);
-    expect(tramoDeLamina(32)).toBe(TRAMOS[2]);
-    expect(tramoDeLamina(39)).toBe(TRAMOS[2]);
+    expect(tramoDeLamina(19)).toBe(TRAMOS[1]);
+    expect(tramoDeLamina(32)).toBe(TRAMOS[1]);
+    expect(tramoDeLamina(33)).toBe(TRAMOS[2]);
+    expect(tramoDeLamina(40)).toBe(TRAMOS[2]);
   });
 
   it("acepta texto (así se guarda) y lleva lo inválido o fuera de rango al tramo más cercano", () => {
@@ -42,6 +43,6 @@ describe("tramoDeLamina", () => {
 describe("etiquetaTramo", () => {
   it("«Láminas 1–13 · Conceptos»", () => {
     expect(etiquetaTramo(TRAMOS[0])).toBe("Láminas 1–13 · Conceptos");
-    expect(etiquetaTramo(TRAMOS[2])).toBe("Láminas 32–39 · En producción");
+    expect(etiquetaTramo(TRAMOS[2])).toBe("Láminas 33–40 · En producción");
   });
 });

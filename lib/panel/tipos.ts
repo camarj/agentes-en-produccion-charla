@@ -12,13 +12,13 @@ export type ClaveCaos = (typeof CLAVES_CAOS)[number];
 export type ClaveActivable = ClaveCaos | "kill_switch";
 export type ValorOnOff = "on" | "off";
 
-// Número de lámina válido (1–39) o null.
+// Número de lámina válido (1–40) o null.
 export function laminaValida(valor: unknown): number | null {
   const n = typeof valor === "string" && /^\s*\d{1,3}\s*$/.test(valor) ? Number(valor) : valor;
   return typeof n === "number" && Number.isInteger(n) && n >= LAMINA_MIN && n <= LAMINA_MAX ? n : null;
 }
 
-// Lleva cualquier número al rango 1–39 (para el stepper).
+// Lleva cualquier número al rango 1–40 (para el stepper).
 export function acotarLamina(n: number): number {
   if (!Number.isFinite(n)) return LAMINA_MIN;
   return Math.min(LAMINA_MAX, Math.max(LAMINA_MIN, Math.round(n)));
@@ -57,6 +57,8 @@ export interface MetricasPanel {
         } | null;
       };
   actualizado_en: string;
+  // Versión del build del servidor: el panel recarga si no coincide con la suya.
+  version: string;
 }
 
 export type MotivoEscalamientoPanel =

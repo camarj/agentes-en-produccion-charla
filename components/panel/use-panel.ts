@@ -10,6 +10,7 @@ import {
   type MetricasPanel,
   type ValorOnOff,
 } from "@/lib/panel/tipos";
+import { recargarSiHayVersionNueva } from "@/lib/version-app";
 
 // Datos del panel: se piden al abrir y luego cada 5 s, sin recargar la página.
 // Si una actualización falla, se conservan los últimos datos y se avisa.
@@ -33,13 +34,22 @@ async function enviar<T>(url: string, method: "POST" | "PATCH", cuerpo: unknown)
 
 const MENSAJE_NO_GUARDADO = "No se pudo guardar el cambio. Intenta de nuevo.";
 
-export function usePanel() {
+// `seguroParaRecargar`: si hay una versión nueva desplegada, el panel recarga
+// una vez, solo cuando esto devuelve true (sin diálogo abierto).
+export function usePanel({
+  seguroParaRecargar = () => true,
+  alRecargar,
+}: { seguroParaRecargar?: () => boolean; alRecargar?: () => void } = {}) {
   const [metricas, setMetricas] = useState<MetricasPanel | null>(null);
   const [interruptores, setInterruptores] = useState<EstadoInterruptores | null>(null);
   const [cola, setCola] = useState<FilaEscalamiento[] | null>(null);
   const [sinConexion, setSinConexion] = useState(false);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
   const enCurso = useRef(false);
+  const recarga = useRef({ seguroParaRecargar, alRecargar });
+  useEffect(() => {
+    recarga.current = { seguroParaRecargar, alRecargar };
+  });
 
   const refrescar = useCallback(async () => {
     if (enCurso.current) return;
@@ -50,6 +60,8 @@ export function usePanel() {
         leer<EstadoInterruptores>("/api/panel/interruptores"),
         leer<{ escalamientos: FilaEscalamiento[] }>("/api/panel/escalamientos"),
       ]);
+      const { seguroParaRecargar: seguro, alRecargar: recargar } = recarga.current;
+      if (recargarSiHayVersionNueva({ servidor: m.version, seguro: seguro(), recargar })) return;
       setMetricas(m);
       setInterruptores(i);
       setCola(c.escalamientos);

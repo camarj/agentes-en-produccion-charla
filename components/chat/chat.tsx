@@ -17,6 +17,7 @@ import {
   textoVisible,
   type MensajeChat,
 } from "@/lib/chat-ui";
+import { chatSeguroParaRecargar, recargarSiHayVersionNueva } from "@/lib/version-app";
 import { AvisoTope, BannerMantenimiento, BannerSinConexion } from "./banners";
 import { Cabecera } from "./cabecera";
 import { Composer } from "./composer";
@@ -104,6 +105,8 @@ export interface PropsChat {
   intervaloReintentoMs?: number;
   // Cada cuánto se vuelven a pedir las sugerencias.
   intervaloSugerenciasMs?: number;
+  // Recarga la página cuando hay una versión nueva desplegada (en tests, un espía).
+  alRecargar?: () => void;
 }
 
 export function Chat({
@@ -111,6 +114,7 @@ export function Chat({
   onSesionExpirada,
   intervaloReintentoMs = INTERVALO_REINTENTO_MS,
   intervaloSugerenciasMs = INTERVALO_SUGERENCIAS_MS,
+  alRecargar,
 }: PropsChat) {
   const [cargando, setCargando] = useState(true);
   const [sugerencias, setSugerencias] = useState<string[]>([]);
@@ -234,12 +238,27 @@ export function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Versión nueva desplegada: el sondeo de sugerencias trae la del servidor y,
+  // si no coincide con la del bundle, se recarga una vez cuando es seguro.
+  const dictandoRef = useRef(false);
+  const recargaRef = useRef({ ocupado, texto, alRecargar });
+  useEffect(() => {
+    recargaRef.current = { ocupado, texto, alRecargar };
+  }, [ocupado, texto, alRecargar]);
+  const alDictar = useCallback((activo: boolean) => {
+    dictandoRef.current = activo;
+  }, []);
+
   // Sugerencias vivas: siguen la lámina actual (cada 5 s y al volver a la pestaña).
   useEffect(() => {
     let vigente = true;
     const refrescar = async () => {
       const r = await obtenerSugerencias();
-      if (!vigente || !r.ok || !Array.isArray(r.datos.sugerencias)) return;
+      if (!vigente || !r.ok) return;
+      const { ocupado: enCurso, texto: borrador, alRecargar: recargar } = recargaRef.current;
+      const seguro = chatSeguroParaRecargar({ ocupado: enCurso, texto: borrador, dictando: dictandoRef.current });
+      if (recargarSiHayVersionNueva({ servidor: r.datos.version, seguro, recargar })) return;
+      if (!Array.isArray(r.datos.sugerencias)) return;
       const nuevas = r.datos.sugerencias;
       setSugerencias((previas) => (mismasSugerencias(previas, nuevas) ? previas : nuevas));
     };
@@ -371,6 +390,7 @@ export function Chat({
             ocupado={ocupado}
             deshabilitado={deshabilitado}
             onPausaDictado={setPausaDictado}
+            onDictando={alDictar}
           />
         </div>
       </div>

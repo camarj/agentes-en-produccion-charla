@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
+import { useCallback, useRef } from "react";
 import { FOCO } from "@/components/acceso/marco";
 import { Skeleton } from "@/components/ui/skeleton";
 import { horaCorta } from "@/lib/panel/formato";
@@ -12,8 +13,16 @@ import { Metricas } from "./metricas";
 import { usePanel } from "./use-panel";
 
 // Panel del speaker (T12), pensado para proyectarse a 1920 × 1080.
-export function Panel({ studioUrl }: { studioUrl: string | null }) {
-  const { metricas, interruptores, cola, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento } = usePanel();
+// `alRecargar`: recarga la página cuando hay una versión nueva (en tests, un espía).
+export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alRecargar?: () => void }) {
+  const dialogoAbierto = useRef(false);
+  const alDialogo = useCallback((abierto: boolean) => {
+    dialogoAbierto.current = abierto;
+  }, []);
+  const { metricas, interruptores, cola, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento } = usePanel({
+    seguroParaRecargar: () => !dialogoAbierto.current,
+    alRecargar,
+  });
 
   return (
     <main className="flex h-dvh flex-col gap-4 overflow-hidden px-8 py-6">
@@ -44,7 +53,7 @@ export function Panel({ studioUrl }: { studioUrl: string | null }) {
 
       {metricas ? (
         <>
-          <Metricas datos={metricas} />
+          <Metricas datos={metricas} valores={interruptores?.valores ?? null} />
           {!metricas.observabilidad.disponible ? (
             <p className="-mt-2 text-base text-muted-foreground">
               Trazas no disponibles por ahora (Mastra se está conectando). Las demás métricas están al día.
@@ -68,7 +77,7 @@ export function Panel({ studioUrl }: { studioUrl: string | null }) {
                 valor={interruptores.valores.lamina_actual}
                 onCambiar={(n) => void cambiarInterruptor("lamina_actual", n)}
               />
-              <KillSwitch estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} />
+              <KillSwitch estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} onDialogo={alDialogo} />
             </div>
             <div className="min-h-0 overflow-y-auto">
               <InterruptoresCaos estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} />

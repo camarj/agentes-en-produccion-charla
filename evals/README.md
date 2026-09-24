@@ -20,7 +20,7 @@
 - `esperado`: `laminas` a citar, `debe_llamar` / `no_debe_llamar`, `escalar` y `motivo_escalamiento`, `bloqueado` y `motivo_bloqueo` (texto, o lista de motivos aceptados: basta con que coincida uno; ver S06), `gate` (debe pasar al 100 %), `criterios` para el juez, y en algunos casos `personalizacion`, `modelo_esperado` o `http_status`
 - `groundTruth`: respuesta de referencia, cuando aplica
 
-Las láminas están numeradas según la presentación actual de 39 láminas. El QR se agrega dentro de una lámina existente para no desplazar esa numeración.
+Las láminas están numeradas según la presentación actual de 40 láminas (desde v1.4.0: la lámina 19 «Qué es un patrón agéntico» es nueva y las antiguas 19–39 pasaron a 20–40). El QR va dentro de la lámina 1, sin desplazar la numeración.
 
 ## Personalización (desde v1.3.0, instrucciones 1.1.0)
 

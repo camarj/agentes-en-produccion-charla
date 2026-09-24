@@ -1,5 +1,7 @@
 // Formato de números, horas y etiquetas del panel (español neutro).
 
+import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "@/src/mastra/modelos";
+
 export const SIN_DATO = "—";
 
 export function latencia(ms: number | null | undefined): string {
@@ -68,8 +70,30 @@ export function nombreModelo(id: string | null | undefined): string | null {
   return id.slice(id.lastIndexOf("/") + 1) || null;
 }
 
-// «respaldo: 2 respuestas en la última hora · la última a las 12:31»
-export function resumenRespaldo(ultimaHora: number, ultimaEn: string | null): string {
-  const base = `respaldo: ${ultimaHora} ${ultimaHora === 1 ? "respuesta" : "respuestas"} en la última hora`;
-  return ultimaEn ? `${base} · la última a las ${horaCorta(ultimaEn)}` : base;
+// Valor grande de «Modelo en uso»: el modelo que va a responder AHORA, según
+// los interruptores (no el de la última respuesta). «Modelos caídos» manda.
+export type EstadoModelo = "principal" | "respaldo" | "sin_modelo";
+
+export function modeloActual(
+  valores: { modelo_caido: string; modelos_caidos: string } | null | undefined,
+): { texto: string; estado: EstadoModelo | null } {
+  if (!valores) return { texto: SIN_DATO, estado: null };
+  if (valores.modelos_caidos === "on") return { texto: "Sin modelo · falla técnica", estado: "sin_modelo" };
+  if (valores.modelo_caido === "on") return { texto: `${nombreModelo(MODELO_RESPALDO)} · respaldo`, estado: "respaldo" };
+  return { texto: nombreModelo(MODELO_PRINCIPAL) ?? SIN_DATO, estado: "principal" };
+}
+
+// «última respuesta: gpt-6-luna a las 18:05» (de las trazas), o «—».
+export function ultimaRespuesta(
+  m: { estado: EstadoModelo; modelo: string | null; en: string } | null | undefined,
+  zonaHoraria?: string,
+): string {
+  const nombre = m ? (m.estado === "sin_modelo" ? "sin modelo" : nombreModelo(m.modelo)) : null;
+  if (!m || !nombre) return `última respuesta: ${SIN_DATO}`;
+  return `última respuesta: ${nombre} a las ${horaCorta(m.en, zonaHoraria)}`;
+}
+
+// «respaldo: 2 en la última hora»
+export function respaldoUltimaHora(n: number): string {
+  return `respaldo: ${n} en la última hora`;
 }

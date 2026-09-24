@@ -2,6 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CLAVE_RECARGA, VERSION_APP } from "@/lib/version-app";
 import { CLAVE_PENDIENTE, Chat, INTERVALO_SUGERENCIAS_MS } from "./chat";
 
 const toastSimulado = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));
@@ -90,6 +91,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   try {
     localStorage.clear();
+    sessionStorage.clear();
   } catch {
     // sin almacenamiento
   }
@@ -548,3 +550,56 @@ describe("Chat: dictado por voz", () => {
     }
   });
 });
+
+describe("Chat: recarga tras un redespliegue", () => {
+  const conVersion = (version: string) =>
+    fetchSimulado.mockImplementation(async (url: string) =>
+      url === "/api/sugerencias" ? json(200, { sugerencias: SUGERENCIAS, version }) : json(200, { messages: [] }),
+    );
+
+  it("misma versión que el bundle: no recarga", async () => {
+    const alRecargar = vi.fn();
+    await montar({ intervaloSugerenciasMs: 30, alRecargar });
+    conVersion(VERSION_APP);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(alRecargar).not.toHaveBeenCalled();
+  });
+
+  it("versión nueva con el chat quieto: recarga una sola vez y la recuerda", async () => {
+    const alRecargar = vi.fn();
+    await montar({ intervaloSugerenciasMs: 30, alRecargar });
+    conVersion("build-nuevo");
+    await waitFor(() => expect(alRecargar).toHaveBeenCalledTimes(1));
+    expect(sessionStorage.getItem(CLAVE_RECARGA)).toBe("build-nuevo");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(alRecargar).toHaveBeenCalledTimes(1);
+  });
+
+  it("con texto en el composer no recarga; al vaciarlo, sí", async () => {
+    const alRecargar = vi.fn();
+    await montar({ intervaloSugerenciasMs: 30, alRecargar });
+    await userEvent.type(caja(), "borrador");
+    conVersion("build-nuevo");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(alRecargar).not.toHaveBeenCalled();
+    await userEvent.clear(caja());
+    await waitFor(() => expect(alRecargar).toHaveBeenCalledTimes(1));
+  });
+
+  it("mientras responde no recarga", async () => {
+    const alRecargar = vi.fn();
+    const s = streamControlado();
+    colaChat.push(() => s.respuesta);
+    await montar({ intervaloSugerenciasMs: 30, alRecargar });
+    await preguntar("¿Qué es un agente?");
+    s.empujar(...inicio(), { type: "text-start", id: "x" }, { type: "text-delta", id: "x", delta: "Un agente…" });
+    await screen.findByText(/Un agente…/);
+    conVersion("build-nuevo");
+    await new Promise((r) => setTimeout(r, 150));
+    expect(alRecargar).not.toHaveBeenCalled();
+    s.empujar({ type: "text-end", id: "x" }, ...fin());
+    s.cerrar();
+    await waitFor(() => expect(alRecargar).toHaveBeenCalledTimes(1));
+  });
+});
+

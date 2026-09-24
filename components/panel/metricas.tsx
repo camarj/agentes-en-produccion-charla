@@ -1,5 +1,5 @@
-import { desgloseFallas, etiquetaMotivoBloqueo, latencia, nombreModelo, resumenRespaldo, SIN_DATO, usd } from "@/lib/panel/formato";
-import type { MetricasPanel } from "@/lib/panel/tipos";
+import { desgloseFallas, etiquetaMotivoBloqueo, latencia, modeloActual, respaldoUltimaHora, SIN_DATO, ultimaRespuesta, usd } from "@/lib/panel/formato";
+import type { EstadoInterruptores, MetricasPanel } from "@/lib/panel/tipos";
 import { cn } from "@/lib/utils";
 
 // Tarjeta de una métrica: título legible desde el fondo y valor de 40 px en mono.
@@ -27,24 +27,19 @@ function Metrica({
   );
 }
 
-// Valor de «Modelo en uso»: el principal en blanco, el respaldo en ámbar y
-// «Sin modelo» en rojo (el acento queda para foco, enlaces y enviar).
-function modeloEnUso(obs: MetricasPanel["observabilidad"]): { texto: string; clase?: string } {
-  const m = obs.disponible ? obs.modelo_en_uso : null;
-  if (!m) return { texto: SIN_DATO };
-  if (m.estado === "sin_modelo") return { texto: "Sin modelo · falla técnica", clase: "text-red-300" };
-  const nombre = nombreModelo(m.modelo);
-  if (m.estado === "respaldo") return { texto: `${nombre ?? "modelo"} · respaldo`, clase: "text-amber-300" };
-  return { texto: nombre ?? SIN_DATO };
-}
+// Color del valor de «Modelo en uso»: el principal en blanco, el respaldo en
+// ámbar y «Sin modelo» en rojo (el acento queda para foco, enlaces y enviar).
+const CLASE_MODELO = { principal: undefined, respaldo: "text-amber-300", sin_modelo: "text-red-300" } as const;
 
-export function Metricas({ datos }: { datos: MetricasPanel }) {
+// `valores`: interruptores actuales. «Modelo en uso» sale de ellos, así que
+// cambia apenas se toca «Modelo caído» / «Modelos caídos».
+export function Metricas({ datos, valores }: { datos: MetricasPanel; valores: EstadoInterruptores["valores"] | null }) {
   const obs = datos.observabilidad;
   const motivos = obs.disponible
     ? Object.entries(obs.bloqueos.por_motivo).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     : [];
   const desglose = obs.disponible ? desgloseFallas(obs.errores_por_tipo) : null;
-  const modelo = modeloEnUso(obs);
+  const modelo = modeloActual(valores);
 
   return (
     <div className="grid grid-cols-5 gap-4">
@@ -97,10 +92,15 @@ export function Metricas({ datos }: { datos: MetricasPanel }) {
       </Metrica>
       <Metrica
         titulo="Modelo en uso"
-        detalle={obs.disponible ? resumenRespaldo(obs.respaldo.ultima_hora, obs.respaldo.ultima_en) : undefined}
+        detalle={
+          <>
+            <p>{ultimaRespuesta(obs.disponible ? obs.modelo_en_uso : null)}</p>
+            {obs.disponible ? <p>{respaldoUltimaHora(obs.respaldo.ultima_hora)}</p> : null}
+          </>
+        }
       >
         {/* Texto largo («claude-sonnet-5 · respaldo»): más chico que las cifras para que quepa. */}
-        <span data-testid="modelo-en-uso" className={cn("text-[28px] leading-tight break-words", modelo.clase)}>
+        <span data-testid="modelo-en-uso" className={cn("text-[28px] leading-tight break-words", modelo.estado && CLASE_MODELO[modelo.estado])}>
           {modelo.texto}
         </span>
       </Metrica>

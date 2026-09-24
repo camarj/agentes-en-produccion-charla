@@ -1,3 +1,4 @@
+import { VERSION_APP } from "@/lib/version-app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crearAsistentes } from "@/lib/db/asistentes";
 import type { FuenteDb } from "@/lib/db/client";
@@ -100,6 +101,7 @@ describe("GET /api/panel/metricas", () => {
       observabilidad: { disponible: false },
     });
     expect(typeof cuerpo.actualizado_en).toBe("string");
+    expect(cuerpo.version).toBe(VERSION_APP);
     const json = JSON.stringify(cuerpo);
     for (const p of ["Ana", "Beto", "a@e.com", "Dev", "CEO"]) expect(json).not.toContain(p);
   });
@@ -189,14 +191,14 @@ describe("/api/panel/interruptores", () => {
     expect(apagado.ultimas_activaciones.kill_switch).not.toBeNull();
   });
 
-  it.each([1, 39, "12", 20])("lámina %s válida", async (valor) => {
+  it.each([1, 40, "12", 20])("lámina %s válida", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(200);
     expect((await r.json()).valores.lamina_actual).toBe(Number(valor));
     expect((await interruptores.obtenerTodos()).lamina_actual).toBe(String(Number(valor)));
   });
 
-  it.each([0, 40, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
+  it.each([0, 41, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(400);
     expect((await r.json()).error).toBe("interruptor_invalido");

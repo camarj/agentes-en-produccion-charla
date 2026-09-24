@@ -38,11 +38,13 @@ export interface PropsDictado {
   onTexto: (texto: string) => void;
   // 423: el asistente está en pausa.
   onPausa?: (mensaje: string) => void;
+  // true mientras graba o transcribe (el chat no recarga en ese momento).
+  onActivo?: (activo: boolean) => void;
 }
 
 // Dictado por voz: graba hasta 60 s, sube el audio a /api/transcribir y
 // devuelve el texto. El audio no se guarda en ningún lado.
-export function BotonDictado({ deshabilitado, onTexto, onPausa }: PropsDictado) {
+export function BotonDictado({ deshabilitado, onTexto, onPausa, onActivo }: PropsDictado) {
   const soportado = useDictadoSoportado();
   const [estado, setEstado] = useState<Estado>("inactivo");
   const [segundos, setSegundos] = useState(0);
@@ -51,6 +53,10 @@ export function BotonDictado({ deshabilitado, onTexto, onPausa }: PropsDictado) 
   const relojes = useRef<number[]>([]);
   const inicio = useRef(0);
   const montado = useRef(true);
+
+  useEffect(() => {
+    onActivo?.(estado !== "inactivo");
+  }, [estado, onActivo]);
 
   function limpiarRelojes() {
     for (const id of relojes.current) window.clearTimeout(id);

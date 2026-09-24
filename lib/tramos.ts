@@ -38,18 +38,18 @@ export const TRAMOS: readonly Tramo[] = [
   {
     id: "decision-diseno",
     desde: 14,
-    hasta: 31,
+    hasta: 32,
     nombre: "Decisión y diseño",
     preguntas: [
       "¿Cómo decido si necesito un agente o basta un flujo fijo?",
       "¿Qué debe incluir el PRD de un agente?",
-      "¿Qué patrones de diseño de agentes se mostraron en la charla?",
+      "¿Qué es un patrón agéntico y cuáles se mostraron en la charla?",
     ],
   },
   {
     id: "produccion",
-    desde: 32,
-    hasta: 39,
+    desde: 33,
+    hasta: 40,
     nombre: "En producción",
     preguntas: [
       "¿Cómo hago que un agente sea resiliente cuando falla el modelo?",

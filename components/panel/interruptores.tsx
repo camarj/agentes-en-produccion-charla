@@ -2,7 +2,7 @@
 
 import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
 import { PauseCircleIcon, PlayCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FOCO } from "@/components/acceso/marco";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { horaCorta } from "@/lib/panel/formato";
@@ -76,8 +76,21 @@ export function InterruptoresCaos({ estado, onCambiar }: { estado: EstadoInterru
 }
 
 // Kill switch: pausar pide confirmación; reanudar es inmediato.
-export function KillSwitch({ estado, onCambiar }: { estado: EstadoInterruptores; onCambiar: OnCambiar }) {
+// `onDialogo`: avisa si el diálogo de confirmación está abierto (el panel no
+// recarga por una versión nueva mientras lo esté).
+export function KillSwitch({
+  estado,
+  onCambiar,
+  onDialogo,
+}: {
+  estado: EstadoInterruptores;
+  onCambiar: OnCambiar;
+  onDialogo?: (abierto: boolean) => void;
+}) {
   const [confirmando, setConfirmando] = useState(false);
+  useEffect(() => {
+    onDialogo?.(confirmando);
+  }, [confirmando, onDialogo]);
   const activo = estado.valores.kill_switch === "on";
 
   return (

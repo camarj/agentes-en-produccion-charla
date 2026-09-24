@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { etiquetaMotivoBloqueo, etiquetaMotivoEscalamiento, etiquetaRol, horaCorta, latencia, usd, desgloseFallas } from "./formato";
+import {
+  desgloseFallas,
+  etiquetaMotivoBloqueo,
+  etiquetaMotivoEscalamiento,
+  etiquetaRol,
+  horaCorta,
+  latencia,
+  modeloActual,
+  respaldoUltimaHora,
+  ultimaRespuesta,
+  usd,
+} from "./formato";
 
 describe("formato del panel", () => {
   it("latencia en segundos con coma decimal; null → —", () => {
@@ -39,5 +50,35 @@ describe("desgloseFallas", () => {
   });
   it("sin fallas → null", () => {
     expect(desgloseFallas({})).toBeNull();
+  });
+});
+
+describe("modelo en uso (tarjeta del panel)", () => {
+  const apagados = { modelo_caido: "off", modelos_caidos: "off" } as const;
+
+  it("el valor grande sale de los interruptores: el modelo que va a responder ahora", () => {
+    expect(modeloActual(apagados)).toEqual({ texto: "gpt-6-luna", estado: "principal" });
+    expect(modeloActual({ ...apagados, modelo_caido: "on" })).toEqual({ texto: "claude-sonnet-5 · respaldo", estado: "respaldo" });
+    // «Modelos caídos» manda aunque «Modelo caído» también esté encendido.
+    expect(modeloActual({ modelo_caido: "on", modelos_caidos: "on" })).toEqual({ texto: "Sin modelo · falla técnica", estado: "sin_modelo" });
+    expect(modeloActual({ ...apagados, modelos_caidos: "on" }).estado).toBe("sin_modelo");
+  });
+
+  it("sin interruptores cargados: «—»", () => {
+    expect(modeloActual(null)).toEqual({ texto: "—", estado: null });
+  });
+
+  it("«última respuesta: <modelo> a las HH:MM», o «—» si no hay dato", () => {
+    const en = "2026-09-26T23:05:00Z";
+    expect(ultimaRespuesta({ estado: "principal", modelo: "openai/gpt-6-luna", en }, "America/Guayaquil")).toBe("última respuesta: gpt-6-luna a las 18:05");
+    expect(ultimaRespuesta({ estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en }, "UTC")).toBe("última respuesta: claude-sonnet-5 a las 23:05");
+    expect(ultimaRespuesta({ estado: "sin_modelo", modelo: null, en }, "UTC")).toBe("última respuesta: sin modelo a las 23:05");
+    expect(ultimaRespuesta({ estado: "principal", modelo: null, en }, "UTC")).toBe("última respuesta: —");
+    expect(ultimaRespuesta(null)).toBe("última respuesta: —");
+  });
+
+  it("«respaldo: N en la última hora»", () => {
+    expect(respaldoUltimaHora(0)).toBe("respaldo: 0 en la última hora");
+    expect(respaldoUltimaHora(3)).toBe("respaldo: 3 en la última hora");
   });
 });

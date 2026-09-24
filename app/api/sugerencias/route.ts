@@ -3,8 +3,10 @@ import { interruptores } from "@/lib/db/interruptores";
 import { errorInterno, noAutenticado } from "@/lib/respuestas";
 import { leerSesion } from "@/lib/session";
 import { tramoDeLamina } from "@/lib/tramos";
+import { versionServidor } from "@/lib/version-app";
 
-// GET → { sugerencias: string[3] }. Requiere sesión.
+// GET → { sugerencias: string[3], version }. Requiere sesión. `version` es la
+// del build: el chat recarga si no coincide con la suya (lib/version-app.ts).
 export async function GET(request: NextRequest) {
   try {
     if (!(await leerSesion(request))) return noAutenticado();
@@ -13,7 +15,7 @@ export async function GET(request: NextRequest) {
     // cookie); igual se pide explícitamente que nadie en el camino lo guarde.
     return NextResponse.json(
       // Tres preguntas fijas por tramo (lib/tramos.ts), según `lamina_actual`.
-      { sugerencias: [...tramoDeLamina(lamina_actual).preguntas] },
+      { sugerencias: [...tramoDeLamina(lamina_actual).preguntas], version: versionServidor() },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

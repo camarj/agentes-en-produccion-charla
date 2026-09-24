@@ -8,6 +8,7 @@ import { jsonPanel } from "@/lib/panel/respuestas";
 import type { MetricasPanel } from "@/lib/panel/tipos";
 import { presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
 import { errorInterno } from "@/lib/respuestas";
+import { versionServidor } from "@/lib/version-app";
 
 function observabilidad(m: MetricasTrazas | null): MetricasPanel["observabilidad"] {
   if (!m) return { disponible: false };
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
       presupuesto: { acumulado_usd: acumulado, maximo_usd: presupuestoMaximoUsd() },
       observabilidad: observabilidad(obs),
       actualizado_en: new Date().toISOString(),
+      version: versionServidor(),
     };
     return jsonPanel(cuerpo);
   } catch (error) {

@@ -18,6 +18,8 @@ export interface PropsComposer {
   deshabilitado: boolean;
   // 423 al dictar: el asistente está en pausa.
   onPausaDictado?: (mensaje: string) => void;
+  // true mientras se graba o transcribe un dictado.
+  onDictando?: (activo: boolean) => void;
 }
 
 // En teléfonos (puntero táctil) Enter hace salto de línea y se envía con el botón.
@@ -25,7 +27,7 @@ function esMovil(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 }
 
-export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, deshabilitado, onPausaDictado }: PropsComposer) {
+export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, deshabilitado, onPausaDictado, onDictando }: PropsComposer) {
   const caja = useRef<HTMLTextAreaElement>(null);
   // El dictado termina segundos después: se une al texto que haya en ese momento.
   const valorActual = useRef(valor);
@@ -99,7 +101,7 @@ export function Composer({ valor, onCambiar, onEnviar, onDetener, ocupado, desha
           {cuenta}
         </span>
       )}
-      <BotonDictado deshabilitado={deshabilitado || ocupado} onTexto={insertarDictado} onPausa={onPausaDictado} />
+      <BotonDictado deshabilitado={deshabilitado || ocupado} onTexto={insertarDictado} onPausa={onPausaDictado} onActivo={onDictando} />
       {ocupado ? (
         <button
           type="button"

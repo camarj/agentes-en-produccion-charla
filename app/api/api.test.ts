@@ -1,3 +1,4 @@
+import { VERSION_APP } from "@/lib/version-app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FuenteDb } from "@/lib/db/client";
 import { crearAsistentes } from "@/lib/db/asistentes";
@@ -235,6 +236,15 @@ describe("GET /api/sugerencias", () => {
     return lista as string[];
   }
 
+  it("incluye la versión del build (el chat recarga si cambió tras un redespliegue)", async () => {
+    const { cookie } = await identificarCon(`ver${ipSiguiente}@e.com`);
+    const cuerpo = await (await sugerencias(peticion("/api/sugerencias", { cookie }))).json();
+    expect(cuerpo.version).toBe(VERSION_APP);
+    vi.stubEnv("VERSION_APP_FORZADA", "otra-version");
+    const forzada = await (await sugerencias(peticion("/api/sugerencias", { cookie }))).json();
+    expect(forzada.version).toBe("otra-version");
+  });
+
   it("nunca se guarda en caché (el chat las vuelve a pedir cada 5 s)", async () => {
     const { cookie } = await identificarCon(`nc${ipSiguiente}@e.com`);
     const r = await sugerencias(peticion("/api/sugerencias", { cookie }));
@@ -249,13 +259,13 @@ describe("GET /api/sugerencias", () => {
     expect(t1.join(" ")).toMatch(/harness/i);
 
     const t2 = await sugerenciasEn("14");
-    expect(await sugerenciasEn("31")).toEqual(t2);
+    expect(await sugerenciasEn("32")).toEqual(t2);
     expect(t2.join(" ")).toMatch(/PRD/);
-    expect(t2.join(" ")).toMatch(/patr/i);
+    expect(t2.join(" ")).toMatch(/patrón agéntico/i);
     expect(t2).not.toEqual(t1);
 
-    const t3 = await sugerenciasEn("32");
-    expect(await sugerenciasEn("39")).toEqual(t3);
+    const t3 = await sugerenciasEn("33");
+    expect(await sugerenciasEn("40")).toEqual(t3);
     expect(t3.join(" ")).toMatch(/resiliencia|guardrail|eval|observabilidad/i);
     expect(t3).not.toEqual(t2);
   });
@@ -269,7 +279,7 @@ describe("GET /api/sugerencias", () => {
 
   it("lámina fuera de rango o inválida usa el tramo más cercano o el primero", async () => {
     const t1 = await sugerenciasEn("1");
-    const t3 = await sugerenciasEn("39");
+    const t3 = await sugerenciasEn("40");
     expect(await sugerenciasEn("45")).toEqual(t3);
     expect(await sugerenciasEn("0")).toEqual(t1);
     expect(await sugerenciasEn("abc")).toEqual(t1);

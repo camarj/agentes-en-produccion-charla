@@ -222,7 +222,7 @@ export function obtenerHistorial() {
 }
 
 export function obtenerSugerencias() {
-  return pedir<{ sugerencias: string[] }>("/api/sugerencias");
+  return pedir<{ sugerencias: string[]; version?: string }>("/api/sugerencias");
 }
 
 export function enviarFeedback(traceId: string, valor: 1 | -1) {

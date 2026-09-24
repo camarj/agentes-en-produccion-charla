@@ -10,7 +10,7 @@ const datos = cargarDataset();
 const casos = new Map(datos.casos.map((c) => [c.id, c]));
 
 function interruptoresFalsos() {
-  const valores: Interruptores = { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: "39" };
+  const valores: Interruptores = { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: "40" };
   const cambios: string[] = [];
   return {
     valores,

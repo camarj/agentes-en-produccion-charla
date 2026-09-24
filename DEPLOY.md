@@ -90,7 +90,10 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 4. **Importar datos** (Dokploy → servicio `web` → Terminal; comparten volumen, así que basta en uno):
    ```bash
    pnpm importar:laminas agentes-produccion-taller-v43-before-slide14-v2.html
-   # Esperado: 39 láminas importadas.
+   # Esperado: 40 láminas importadas.
+   # Ojo: importar solo agrega o actualiza (upsert); no borra láminas que ya no
+   # existan. Si la presentación nueva tuviera MENOS láminas, borra las sobrantes
+   # (DELETE FROM laminas WHERE numero > N) y vuelve a importar.
    ```
    Inscritos: copia el `.xlsx` que te pase Raúl dentro del volumen (p. ej. `scp` al servidor y `docker cp <archivo> <contenedor-web>:/app/data/inscritos.xlsx`), luego:
    ```bash
@@ -147,7 +150,7 @@ Después de la carga, en `/panel` los mensajes de carga cuentan en las métricas
 - [ ] Android: aparece «Instalar app» y se instala. iPhone (Safari): aparece la indicación «Agregar a inicio» y la app abre a pantalla completa (puede pedir el email otra vez: es normal).
 - [ ] El teclado del teléfono no tapa el cuadro de texto del chat.
 - [ ] Studio solo con contraseña.
-- [ ] 39 láminas y 25 inscritos importados; el xlsx borrado del volumen.
+- [ ] 40 láminas y 25 inscritos importados; el xlsx borrado del volumen.
 - [ ] Dos experimentos de evals visibles en Studio con Compare.
 - [ ] Prueba de carga: números reportados, asistentes de prueba borrados.
 - [ ] `v1-estable` etiquetado y rollback probado.

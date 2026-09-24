@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EstadoInterruptores, FilaEscalamiento, MetricasPanel } from "@/lib/panel/tipos";
 import { TRAMOS } from "@/lib/tramos";
+import { CLAVE_RECARGA, VERSION_APP } from "@/lib/version-app";
 import { Panel } from "./panel";
 
 const json = (cuerpo: unknown, status = 200) =>
@@ -29,6 +30,7 @@ function metricasBase(): MetricasPanel {
       modelo_en_uso: { estado: "principal", modelo: "gpt-6-luna", en: "2026-09-26T17:59:00.000Z" },
     },
     actualizado_en: "2026-09-26T18:00:00.000Z",
+    version: VERSION_APP,
   };
 }
 
@@ -77,14 +79,15 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 const metrica = (nombre: string) => screen.getByRole("group", { name: nombre });
 
-async function montar(studioUrl: string | null = "https://studio.ejemplo.com") {
-  render(<Panel studioUrl={studioUrl} />);
+async function montar(studioUrl: string | null = "https://studio.ejemplo.com", alRecargar = vi.fn()) {
+  render(<Panel studioUrl={studioUrl} alRecargar={alRecargar} />);
   await screen.findByText("42");
 }
 
@@ -94,7 +97,7 @@ describe("Panel del speaker", () => {
     await montar();
     expect(within(metrica("Fallas técnicas")).getByText("0")).toBeTruthy();
     expect(within(metrica("Fallas técnicas")).queryByText(/tiempo agotado/)).toBeNull();
-    expect(within(metrica("Modelo en uso")).getByText("respaldo: 0 respuestas en la última hora")).toBeTruthy();
+    expect(within(metrica("Modelo en uso")).getByText("respaldo: 0 en la última hora")).toBeTruthy();
   });
 
   it("con «Modelo caído» encendido, su fila dice que responde el respaldo", async () => {
@@ -121,7 +124,8 @@ describe("Panel del speaker", () => {
     expect(within(fallas).getByText("1 herramienta · 1 modelo · 2 tiempo agotado")).toBeTruthy();
     const modelo = metrica("Modelo en uso");
     expect(within(modelo).getByText("gpt-6-luna")).toBeTruthy();
-    expect(within(modelo).getByText(/^respaldo: 3 respuestas en la última hora · la última a las \d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(modelo).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(modelo).getByText("respaldo: 3 en la última hora")).toBeTruthy();
     const bloqueos = metrica("Bloqueos de guardrails");
     expect(within(bloqueos).getByText("4")).toBeTruthy();
     expect(within(bloqueos).getByText(/Fuera de alcance 3/)).toBeTruthy();
@@ -142,9 +146,11 @@ describe("Panel del speaker", () => {
   it("observabilidad no disponible: «—» en latencia, errores y bloqueos; el resto se ve", async () => {
     metricas.observabilidad = { disponible: false };
     await montar();
-    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Fallas técnicas", "Bloqueos de guardrails", "Modelo en uso"]) {
+    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Fallas técnicas", "Bloqueos de guardrails"]) {
       expect(within(metrica(nombre)).getByText("—")).toBeTruthy();
     }
+    // «Modelo en uso» sale de los interruptores: no depende de las trazas.
+    expect(within(metrica("Modelo en uso")).getByText("última respuesta: —")).toBeTruthy();
     expect(screen.getByText(/Trazas no disponibles por ahora/)).toBeTruthy();
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
   });
@@ -174,40 +180,55 @@ describe("Panel del speaker", () => {
 
   describe("modelo en uso", () => {
     const obs = () => metricas.observabilidad as Extract<MetricasPanel["observabilidad"], { disponible: true }>;
-    const valor = () => within(metrica("Modelo en uso")).getByTestId("modelo-en-uso");
+    const tarjeta = () => metrica("Modelo en uso");
+    const valor = () => within(tarjeta()).getByTestId("modelo-en-uso");
 
-    it("principal: solo el nombre del modelo, sin proveedor", async () => {
-      obs().modelo_en_uso = { estado: "principal", modelo: "openai/gpt-6-luna", en: "2026-09-26T17:59:00.000Z" };
-      await montar();
-      expect(valor().textContent).toBe("gpt-6-luna");
-      expect(valor().className).not.toMatch(/amber|red/);
-    });
-
-    it("respaldo: «claude-sonnet-5 · respaldo» resaltado en ámbar", async () => {
+    it("interruptores apagados: el principal en blanco, aunque la última respuesta fuera del respaldo", async () => {
       obs().modelo_en_uso = { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T17:59:00.000Z" };
       obs().respaldo = { ultima_hora: 1, ultima_en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      expect(valor().textContent).toBe("claude-sonnet-5 · respaldo");
-      expect(valor().className).toMatch(/amber/);
-      expect(within(metrica("Modelo en uso")).getByText(/^respaldo: 1 respuesta en la última hora · la última a las \d{2}:\d{2}$/)).toBeTruthy();
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      expect(valor().className).not.toMatch(/amber|red/);
+      expect(within(tarjeta()).getByText(/^última respuesta: claude-sonnet-5 a las \d{2}:\d{2}$/)).toBeTruthy();
+      expect(within(tarjeta()).getByText("respaldo: 1 en la última hora")).toBeTruthy();
     });
 
-    it("fallan los dos: «Sin modelo · falla técnica» en rojo", async () => {
-      obs().modelo_en_uso = { estado: "sin_modelo", modelo: null, en: "2026-09-26T17:59:00.000Z" };
+    it("«Modelo caído» encendido: «claude-sonnet-5 · respaldo» en ámbar antes de que nadie pregunte", async () => {
+      estadoInt.valores.modelo_caido = "on";
       await montar();
-      expect(valor().textContent).toBe("Sin modelo · falla técnica");
+      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      expect(valor().className).toMatch(/amber/);
+      expect(within(tarjeta()).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+    });
+
+    it("«Modelos caídos» encendido: «Sin modelo · falla técnica» en rojo", async () => {
+      estadoInt.valores.modelos_caidos = "on";
+      estadoInt.valores.modelo_caido = "on";
+      await montar();
+      await waitFor(() => expect(valor().textContent).toBe("Sin modelo · falla técnica"));
       expect(valor().className).toMatch(/red/);
     });
 
-    it("sin turnos todavía o sin dato del modelo: «—»", async () => {
+    it("cambia apenas se toca el interruptor, sin esperar una respuesta del agente", async () => {
+      const u = userEvent.setup();
+      await montar();
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
+      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+    });
+
+    it("sin turnos todavía o sin trazas: la última respuesta dice «—»", async () => {
       obs().modelo_en_uso = null;
       await montar();
-      expect(valor().textContent).toBe("—");
+      expect(within(tarjeta()).getByText("última respuesta: —")).toBeTruthy();
       cleanup();
       metricas = metricasBase();
-      obs().modelo_en_uso = { estado: "principal", modelo: null, en: "2026-09-26T17:59:00.000Z" };
+      metricas.observabilidad = { disponible: false };
       await montar();
-      expect(valor().textContent).toBe("—");
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      expect(within(tarjeta()).getByText("última respuesta: —")).toBeTruthy();
     });
 
     it("no hay tarjeta «Modelo de respaldo» (la reemplaza «Modelo en uso»)", async () => {
@@ -232,10 +253,10 @@ describe("Panel del speaker", () => {
       const u = userEvent.setup();
       await montar();
       await u.click(boton(2));
-      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 39 } });
+      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 40 } });
       await waitFor(() => expect(boton(2).getAttribute("aria-pressed")).toBe("true"));
       await u.click(boton(1));
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 31 });
+      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 32 });
     });
 
     it("elegir el tramo que ya está elegido no guarda nada", async () => {
@@ -340,5 +361,47 @@ describe("Panel del speaker", () => {
     cleanup();
     await montar(null);
     expect(screen.queryByRole("link", { name: /Abrir Mastra Studio/ })).toBeNull();
+  });
+
+  describe("recarga tras un redespliegue", () => {
+    const sondear = () =>
+      act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+
+    it("misma versión: no recarga", async () => {
+      const alRecargar = vi.fn();
+      await montar(null, alRecargar);
+      await sondear();
+      expect(alRecargar).not.toHaveBeenCalled();
+    });
+
+    it("versión nueva: recarga una sola vez y la recuerda en sessionStorage", async () => {
+      const alRecargar = vi.fn();
+      await montar(null, alRecargar);
+      metricas = { ...metricasBase(), version: "build-nuevo" };
+      await sondear();
+      await waitFor(() => expect(alRecargar).toHaveBeenCalledTimes(1));
+      expect(sessionStorage.getItem(CLAVE_RECARGA)).toBe("build-nuevo");
+      await sondear();
+      await sondear();
+      expect(alRecargar).toHaveBeenCalledTimes(1);
+    });
+
+    it("con el diálogo de confirmación abierto no recarga; al cerrarlo, sí", async () => {
+      const u = userEvent.setup();
+      const alRecargar = vi.fn();
+      await montar(null, alRecargar);
+      await u.click(screen.getByRole("button", { name: "Pausar el asistente" }));
+      const dialogo = await screen.findByRole("dialog");
+      metricas = { ...metricasBase(), version: "build-nuevo" };
+      await sondear();
+      await sondear();
+      expect(alRecargar).not.toHaveBeenCalled();
+      await u.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await sondear();
+      await waitFor(() => expect(alRecargar).toHaveBeenCalledTimes(1));
+    });
   });
 });
