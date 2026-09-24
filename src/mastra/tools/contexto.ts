@@ -1,3 +1,4 @@
+import type { SpanType } from "@mastra/core/observability";
 import type { RequestContext } from "@mastra/core/request-context";
 
 // Lo mínimo del span de Mastra que usan las herramientas.
@@ -5,6 +6,7 @@ interface SpanHerramienta {
   traceId: string;
   isValid: boolean;
   update(opciones: { metadata?: Record<string, unknown> }): void;
+  findParent?(tipo: SpanType): { update(opciones: { metadata?: Record<string, unknown> }): void } | undefined;
 }
 
 interface ContextoHerramienta {

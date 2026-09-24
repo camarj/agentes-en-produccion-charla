@@ -19,6 +19,8 @@ export interface PropsListaMensajes {
   enCurso: boolean;
   indicador: Indicador | null;
   interrumpida: boolean;
+  // La última pregunta espera a que el asistente vuelva de la pausa.
+  enEspera?: boolean;
   vacio: ReactNode;
   scroll: ReturnType<typeof useAutoScroll<HTMLDivElement>>;
   onReintentar: () => void;
@@ -47,7 +49,11 @@ export function ListaMensajes(p: PropsListaMensajes) {
           ) : (
             p.grupos.map((g, i) =>
               g.role === "user" ? (
-                <MensajeUsuario key={g.id} texto={textoVisible(g.parts)} />
+                <MensajeUsuario
+                  key={g.id}
+                  texto={textoVisible(g.parts)}
+                  enEspera={Boolean(p.enEspera) && i === p.grupos.length - 1}
+                />
               ) : (
                 <MensajeAsistente
                   key={g.id}

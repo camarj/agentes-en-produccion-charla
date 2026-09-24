@@ -1,5 +1,5 @@
 import { FOCO } from "@/components/acceso/marco";
-import { saludo } from "@/lib/chat-ui";
+import { TEXTOS, saludo } from "@/lib/chat-ui";
 import { cn } from "@/lib/utils";
 
 export interface PropsEstadoVacio {
@@ -34,6 +34,33 @@ export function EstadoVacio({ nombrePila, sugerencias, deshabilitado, onElegir }
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Con conversación: fila compacta de sugerencias sobre el composer, con scroll
+// horizontal. Botones de 44 px de alto (mínimo táctil).
+export function SugerenciasCompactas({ sugerencias, onElegir }: { sugerencias: string[]; onElegir: (pregunta: string) => void }) {
+  if (sugerencias.length === 0) return null;
+  return (
+    <div
+      role="group"
+      aria-label={TEXTOS.sugeridas}
+      className="-mx-4 mb-2 flex gap-2 overflow-x-auto overscroll-x-contain px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {sugerencias.slice(0, 3).map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onElegir(s)}
+          className={cn(
+            "min-h-11 shrink-0 rounded-full border border-border bg-card px-4 text-sm whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground",
+            FOCO,
+          )}
+        >
+          {s}
+        </button>
+      ))}
     </div>
   );
 }

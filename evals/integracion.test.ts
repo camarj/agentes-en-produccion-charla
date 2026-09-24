@@ -76,7 +76,7 @@ function montar({ criteriosCumplidos = true, responder = "Andrea, un agente deci
     modeloRespaldo: juez.modelo as never,
     mensajeMantenimiento: "pausa",
   });
-  const valores: Interruptores = { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", kill_switch: "off", lamina_actual: "39" };
+  const valores: Interruptores = { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: "39" };
   const objetivo = crearObjetivo(agente, {
     casos,
     observaciones,

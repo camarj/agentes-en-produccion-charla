@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { etiquetaMotivoBloqueo, etiquetaMotivoEscalamiento, etiquetaRol, horaCorta, latencia, usd } from "./formato";
+import { etiquetaMotivoBloqueo, etiquetaMotivoEscalamiento, etiquetaRol, horaCorta, latencia, usd, desgloseFallas } from "./formato";
 
 describe("formato del panel", () => {
   it("latencia en segundos con coma decimal; null → —", () => {
@@ -29,5 +29,15 @@ describe("formato del panel", () => {
     expect(etiquetaMotivoBloqueo("algo_nuevo")).toBe("algo nuevo");
     expect(etiquetaRol("educacion")).toBe("Educación");
     expect(etiquetaRol("tecnico")).toBe("Técnico");
+  });
+});
+
+describe("desgloseFallas", () => {
+  it("orden fijo: herramienta, modelo, tiempo agotado, otro; omite ceros", () => {
+    expect(desgloseFallas({ modelo: 1, tiempo: 2, herramienta: 1 })).toBe("1 herramienta · 1 modelo · 2 tiempo agotado");
+    expect(desgloseFallas({ otro: 3, herramienta: 0 })).toBe("3 otro");
+  });
+  it("sin fallas → null", () => {
+    expect(desgloseFallas({})).toBeNull();
   });
 });

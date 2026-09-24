@@ -17,8 +17,10 @@ function observabilidad(m: MetricasTrazas | null): MetricasPanel["observabilidad
     latencia_p95_ms: m.latencia.p95Ms,
     muestras_latencia: m.latencia.muestras,
     errores: m.errores,
+    errores_por_tipo: m.erroresPorTipo,
     bloqueos: { total: m.bloqueos.total, por_motivo: m.bloqueos.porMotivo },
     turnos: m.turnos,
+    respaldo: { ultima_hora: m.respaldo.ultimaHora, ultima_en: m.respaldo.ultimaEn },
   };
 }
 

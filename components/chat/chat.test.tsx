@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Chat } from "./chat";
+import { CLAVE_PENDIENTE, Chat } from "./chat";
 
 const toastSimulado = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastSimulado }));
@@ -83,6 +83,11 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  try {
+    localStorage.clear();
+  } catch {
+    // sin almacenamiento
+  }
 });
 
 const llamadasA = (url: string) => fetchSimulado.mock.calls.filter((c) => c[0] === url);
@@ -113,7 +118,7 @@ describe("Chat: hidratación y estado vacío", () => {
 
     await userEvent.click(chips[0]);
     expect(await screen.findByText("lámina 5")).toBeTruthy();
-    expect(screen.getByText(SUGERENCIAS[0])).toBeTruthy(); // burbuja del usuario
+    expect(within(screen.getByRole("log")).getByText(SUGERENCIAS[0])).toBeTruthy(); // burbuja del usuario
     expect(screen.queryByRole("heading", { name: "Hola, Andrea." })).toBeNull();
 
     // Solo el último mensaje viaja: el historial lo aporta la memoria del servidor.
@@ -134,7 +139,7 @@ describe("Chat: hidratación y estado vacío", () => {
       { id: "a2", role: "assistant", parts: [{ type: "text", text: "Es lo que rodea al **modelo**." }] },
     ];
     await montar();
-    expect(screen.getByText("¿Qué es el harness?")).toBeTruthy();
+    expect(within(screen.getByRole("log")).getByText("¿Qué es el harness?")).toBeTruthy();
     expect(screen.getByText("modelo").tagName).toBe("STRONG");
     expect(screen.queryByRole("heading", { name: "Hola, Andrea." })).toBeNull();
     // Una sola respuesta con sus acciones (y el trace_id del historial).
@@ -339,5 +344,152 @@ describe("Chat: cabecera", () => {
     await montar();
     const titulo = screen.getByText("Agentes en producción");
     expect(titulo.closest("header")?.className).toContain("h-14");
+  });
+});
+
+// ---------- Arreglos post-T14: pausa larga, pregunta en espera y sugerencias vivas ----------
+
+const PAUSA = "El asistente está en pausa unos minutos. Vuelve a intentarlo pronto.";
+const FALLAS = "Estamos presentando fallas en este momento. Tu pregunta quedó en espera y se responderá apenas el asistente vuelva.";
+const pausa = () => json(423, { error: "mantenimiento", mensaje: PAUSA });
+
+describe("Chat: pausa (kill switch) prolongada", () => {
+  it("tras 3 reintentos fallidos cambia el aviso, sigue reintentando y al volver responde sin reenviar", async () => {
+    colaChat.push(pausa, pausa, pausa, pausa, pausa, () => respuestaCompleta("Ya volví."));
+    await montar();
+    await preguntar("¿Hola?");
+    expect(await screen.findByText(PAUSA)).toBeTruthy();
+    // La pregunta queda como mensaje del usuario, marcada «En espera».
+    const log = screen.getByRole("log");
+    expect(within(log).getByText("¿Hola?")).toBeTruthy();
+    expect(within(log).getByText("En espera")).toBeTruthy();
+
+    expect(await screen.findByText(FALLAS, {}, { timeout: 2000 })).toBeTruthy();
+    expect(llamadasA("/api/chat").length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText(PAUSA)).toBeNull();
+
+    expect(await screen.findByText("Ya volví.", {}, { timeout: 2000 })).toBeTruthy();
+    expect(llamadasA("/api/chat")).toHaveLength(6);
+    expect(screen.queryByText(FALLAS)).toBeNull();
+    expect(screen.queryByText("En espera")).toBeNull();
+    expect(screen.getAllByText("¿Hola?")).toHaveLength(1);
+    expect(localStorage.getItem(CLAVE_PENDIENTE)).toBeNull();
+  });
+
+  it("guarda la pregunta en espera en localStorage mientras dura la pausa", async () => {
+    colaChat.push(pausa, pausa, pausa, pausa, pausa, pausa, pausa, pausa, pausa, pausa);
+    await montar({ intervaloReintentoMs: 60_000 });
+    await preguntar("¿Me guardas?");
+    await screen.findByText(PAUSA);
+    expect(JSON.parse(localStorage.getItem(CLAVE_PENDIENTE)!)).toMatchObject({ texto: "¿Me guardas?" });
+  });
+
+  it("al recargar con una pregunta en espera, la muestra y la reenvía sola hasta que se responde", async () => {
+    localStorage.setItem(CLAVE_PENDIENTE, JSON.stringify({ texto: "¿Sigo en espera?", fallas: 4 }));
+    historial = [
+      { id: "u1", role: "user", parts: [{ type: "text", text: "Vieja" }] },
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "Respuesta vieja" }] },
+    ];
+    colaChat.push(pausa, () => respuestaCompleta("Respondida tras recargar."));
+    render(<Chat nombrePila="Andrea" onSesionExpirada={vi.fn()} intervaloReintentoMs={50} />);
+    // Ya había pasado 3 reintentos: aviso de fallas directamente.
+    expect(await screen.findByText(FALLAS)).toBeTruthy();
+    expect(within(screen.getByRole("log")).getByText("¿Sigo en espera?")).toBeTruthy();
+    expect(await screen.findByText("Respondida tras recargar.", {}, { timeout: 2000 })).toBeTruthy();
+    const cuerpo = JSON.parse(llamadasA("/api/chat")[0][1].body);
+    expect(cuerpo.messages[0]).toMatchObject({ role: "user", parts: [{ type: "text", text: "¿Sigo en espera?" }] });
+    expect(screen.getAllByText("¿Sigo en espera?")).toHaveLength(1);
+    expect(localStorage.getItem(CLAVE_PENDIENTE)).toBeNull();
+  });
+
+  it("si el historial ya tiene la pregunta respondida, no la reenvía", async () => {
+    localStorage.setItem(CLAVE_PENDIENTE, JSON.stringify({ texto: "Ya respondida", fallas: 1 }));
+    historial = [
+      { id: "u1", role: "user", parts: [{ type: "text", text: "Ya respondida" }] },
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "Sí." }] },
+    ];
+    await montar();
+    expect(llamadasA("/api/chat")).toHaveLength(0);
+    expect(localStorage.getItem(CLAVE_PENDIENTE)).toBeNull();
+  });
+
+  it("localStorage que lanza no rompe el chat", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("bloqueado");
+    });
+    colaChat.push(pausa, () => respuestaCompleta("Igual respondo."));
+    await montar();
+    await preguntar("¿Sin almacenamiento?");
+    expect(await screen.findByText("Igual respondo.", {}, { timeout: 2000 })).toBeTruthy();
+    vi.restoreAllMocks();
+  });
+});
+
+describe("Chat: sugerencias vivas", () => {
+  const OTRAS = ["¿Qué guardrails conviene poner?", "¿Cómo uso evals?", "¿Qué es la resiliencia?"];
+
+  it("se vuelven a pedir cada cierto tiempo (no-store) y cambian en el estado vacío", async () => {
+    await montar({ intervaloSugerenciasMs: 50 });
+    expect(screen.getByRole("button", { name: SUGERENCIAS[0] })).toBeTruthy();
+    fetchSimulado.mockImplementation(async (url: string) =>
+      url === "/api/sugerencias" ? json(200, { sugerencias: OTRAS }) : json(200, { messages: [] }),
+    );
+    expect(await screen.findByRole("button", { name: OTRAS[0] }, { timeout: 2000 })).toBeTruthy();
+    expect(llamadasA("/api/sugerencias").at(-1)![1]).toMatchObject({ cache: "no-store" });
+  });
+
+  it("se vuelven a pedir al volver a la pestaña (visibilitychange) y al enfocar", async () => {
+    await montar();
+    const antes = llamadasA("/api/sugerencias").length;
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(llamadasA("/api/sugerencias").length).toBe(antes + 1));
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(llamadasA("/api/sugerencias").length).toBe(antes + 2));
+  });
+
+  it("con conversación: fila compacta sobre el composer; tocar una la envía", async () => {
+    historial = [
+      { id: "u1", role: "user", parts: [{ type: "text", text: "Vieja" }] },
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "Respuesta vieja" }] },
+    ];
+    await montar();
+    const fila = screen.getByRole("group", { name: "Preguntas sugeridas" });
+    expect(fila.className).toContain("overflow-x-auto");
+    const chips = within(fila).getAllByRole("button");
+    expect(chips).toHaveLength(3);
+    expect(chips[0].className).toContain("min-h-11");
+
+    const s = streamControlado();
+    colaChat.push(() => s.respuesta);
+    await userEvent.click(chips[1]);
+    // Oculta mientras responde.
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Preguntas sugeridas" })).toBeNull());
+    s.empujar(...inicio(), ...texto("Listo."), ...fin());
+    s.cerrar();
+    expect(await screen.findByText("Listo.")).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Preguntas sugeridas" })).toBeTruthy();
+    const cuerpo = JSON.parse(llamadasA("/api/chat")[0][1].body);
+    expect(cuerpo.messages[0]).toMatchObject({ role: "user", parts: [{ type: "text", text: SUGERENCIAS[1] }] });
+  });
+
+  it("oculta la fila en pausa y con el tope", async () => {
+    historial = [
+      { id: "u1", role: "user", parts: [{ type: "text", text: "Vieja" }] },
+      { id: "a1", role: "assistant", parts: [{ type: "text", text: "Respuesta vieja" }] },
+    ];
+    colaChat.push(pausa, pausa, pausa, pausa, pausa, pausa);
+    await montar({ intervaloReintentoMs: 60_000 });
+    await preguntar("¿Pausa?");
+    await screen.findByText(PAUSA);
+    expect(screen.queryByRole("group", { name: "Preguntas sugeridas" })).toBeNull();
+  });
+
+  it("en el estado vacío no se duplica la fila", async () => {
+    await montar();
+    expect(screen.queryByRole("group", { name: "Preguntas sugeridas" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: SUGERENCIAS[0] })).toHaveLength(1);
   });
 });

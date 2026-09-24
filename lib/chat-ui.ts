@@ -29,6 +29,10 @@ export const TEXTOS = {
   meSirvio: "Me sirvió",
   noMeSirvio: "No me sirvió",
   sinConexion: "Sin conexión",
+  pausaProlongada:
+    "Estamos presentando fallas en este momento. Tu pregunta quedó en espera y se responderá apenas el asistente vuelva.",
+  enEspera: "En espera",
+  sugeridas: "Preguntas sugeridas",
   frecuencia: "Vas muy rápido, espera unos segundos",
   errorFeedback: "No pudimos registrar tu valoración. Intenta de nuevo.",
   errorNuevaConversacion: "No pudimos empezar una conversación nueva. Intenta de nuevo.",

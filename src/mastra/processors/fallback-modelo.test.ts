@@ -11,8 +11,8 @@ import {
 } from "./fallback-modelo";
 import { modeloFalso } from "./pruebas-modelo";
 
-function interruptores(modelo_caido: string) {
-  return { obtenerTodos: vi.fn().mockResolvedValue({ modelo_caido }) };
+function interruptores(modelo_caido: string, modelos_caidos = "off") {
+  return { obtenerTodos: vi.fn().mockResolvedValue({ modelo_caido, modelos_caidos }) };
 }
 
 function modelo(id: string) {
@@ -147,13 +147,52 @@ describe("FallbackModelo.processInputStep (unidad)", () => {
     expect(span.update).toHaveBeenCalledWith(marca);
     expect(agentRun.update).toHaveBeenCalledWith(marca);
     expect(generation.update).toHaveBeenCalledWith(marca);
-    expect(i.obtenerTodos).not.toHaveBeenCalled();
   });
 
   it("si no puede leer los interruptores, asume que están apagados", async () => {
     const p = new FallbackModelo({ interruptores: { obtenerTodos: vi.fn().mockRejectedValue(new Error("db")) } });
     expect(await p.processInputStep({ model: modelo(MODELO_PRINCIPAL) } as never)).toBeUndefined();
   });
+});
+
+describe("FallbackModelo · modelos_caidos (fallan el principal y el respaldo)", () => {
+  it("reemplaza el principal por uno que falla", async () => {
+    const p = new FallbackModelo({ interruptores: interruptores("off", "on") });
+    const { span } = spanFalso();
+    const r = await p.processInputStep({ model: modelo(MODELO_PRINCIPAL), tracingContext: { currentSpan: span } } as never);
+    const reemplazo = (r as { model: ReturnType<typeof crearModeloCaido> }).model;
+    expect(`${reemplazo.provider}/${reemplazo.modelId}`).toBe(MODELO_PRINCIPAL);
+    await expect(reemplazo.doStream()).rejects.toSatisfy(esErrorDeSobrecarga);
+  });
+
+  it("reemplaza también el respaldo y no lo marca como respuesta del respaldo", async () => {
+    const p = new FallbackModelo({ interruptores: interruptores("off", "on") });
+    const { span, agentRun } = spanFalso();
+    const r = await p.processInputStep({ model: modelo(MODELO_RESPALDO), tracingContext: { currentSpan: span } } as never);
+    const reemplazo = (r as { model: ReturnType<typeof crearModeloCaido> }).model;
+    expect(`${reemplazo.provider}/${reemplazo.modelId}`).toBe(MODELO_RESPALDO);
+    await expect(reemplazo.doGenerate()).rejects.toSatisfy(esErrorDeSobrecarga);
+    expect(span.update).toHaveBeenCalledWith({ metadata: { modelos_caidos_simulado: true } });
+    expect(agentRun.update).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ modelo_respaldo: true }) }));
+  });
+
+  it("con un agente real: ningún proveedor recibe la petición y el error llega a quien llama", async () => {
+    const principal = modeloFalso(MODELO_PRINCIPAL, () => ({ texto: "desde el principal" }));
+    const respaldo = modeloFalso(MODELO_RESPALDO, () => ({ texto: "desde el respaldo" }));
+    const a = new Agent({
+      id: "prueba-modelos-caidos",
+      name: "prueba-modelos-caidos",
+      instructions: "x",
+      model: [
+        { id: "principal", model: principal.modelo as never, maxRetries: 1 },
+        { id: "respaldo", model: respaldo.modelo as never, maxRetries: 0 },
+      ],
+      inputProcessors: [new FallbackModelo({ interruptores: interruptores("off", "on") })],
+    });
+    await expect(a.generate("hola")).rejects.toBeTruthy();
+    expect(principal.llamadas.length).toBe(0);
+    expect(respaldo.llamadas.length).toBe(0);
+  }, 15_000);
 });
 
 describe("FallbackModelo con un agente real (fallback nativo de Mastra)", () => {

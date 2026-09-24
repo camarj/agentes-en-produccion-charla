@@ -12,7 +12,14 @@ import type { z } from "zod";
 type Db = Awaited<ReturnType<typeof crearDbTemporal>>;
 
 function spanFalso() {
-  return { isValid: true, traceId: "trace-1", update: vi.fn() };
+  const agentRun = { update: vi.fn() };
+  return {
+    isValid: true,
+    traceId: "trace-1",
+    update: vi.fn(),
+    agentRun,
+    findParent: vi.fn((tipo: string) => (tipo === "agent_run" ? agentRun : undefined)),
+  };
 }
 
 function contexto(span?: ReturnType<typeof spanFalso>) {
@@ -75,6 +82,7 @@ describe("buscar_laminas", () => {
       expect(span.update).toHaveBeenCalledWith({
         metadata: { intentos: 1, interruptores_activos: [], cantidad_resultados: r.resultados.length },
       });
+      expect(span.agentRun.update).not.toHaveBeenCalled();
     });
 
     it("sin coincidencias marca sin_resultados", async () => {
@@ -135,8 +143,10 @@ describe("buscar_laminas", () => {
       await expect(promesa).resolves.toEqual({ error: "no_disponible" });
       expect(buscar).not.toHaveBeenCalled();
       expect(span.update).toHaveBeenCalledWith({
-        metadata: { intentos: 3, interruptores_activos: ["herramienta_caida"], cantidad_resultados: 0 },
+        metadata: { intentos: 3, interruptores_activos: ["herramienta_caida"], cantidad_resultados: 0, falla_herramienta: true },
       });
+      // La falla queda también en la raíz del turno: el panel la cuenta aunque el agente responda.
+      expect(span.agentRun.update).toHaveBeenCalledWith({ metadata: { falla_herramienta: true } });
       expect(vi.getTimerCount()).toBe(0);
     });
 
@@ -155,8 +165,9 @@ describe("buscar_laminas", () => {
       await expect(promesa).resolves.toEqual({ error: "no_disponible" });
       expect(buscar).not.toHaveBeenCalled();
       expect(span.update).toHaveBeenCalledWith({
-        metadata: { intentos: 3, interruptores_activos: ["latencia_alta"], cantidad_resultados: 0 },
+        metadata: { intentos: 3, interruptores_activos: ["latencia_alta"], cantidad_resultados: 0, falla_herramienta: true },
       });
+      expect(span.agentRun.update).toHaveBeenCalledWith({ metadata: { falla_herramienta: true } });
       expect(vi.getTimerCount()).toBe(0);
     });
   });

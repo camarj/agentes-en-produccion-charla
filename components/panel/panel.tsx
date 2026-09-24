@@ -59,21 +59,27 @@ export function Panel({ studioUrl }: { studioUrl: string | null }) {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4">
-        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-          {interruptores ? (
-            <>
+      {/* Tres columnas para que la pausa y los 4 interruptores quepan en 1080p sin desplazarse. */}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,6fr)] gap-4">
+        {interruptores ? (
+          <>
+            <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
               <SelectorLamina
                 valor={interruptores.valores.lamina_actual}
                 onCambiar={(n) => void cambiarInterruptor("lamina_actual", n)}
               />
-              <InterruptoresCaos estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} />
               <KillSwitch estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} />
-            </>
-          ) : (
+            </div>
+            <div className="min-h-0 overflow-y-auto">
+              <InterruptoresCaos estado={interruptores} onCambiar={(c, v) => void cambiarInterruptor(c, v)} />
+            </div>
+          </>
+        ) : (
+          <>
             <Skeleton className="h-full rounded-xl" />
-          )}
-        </div>
+            <Skeleton className="h-full rounded-xl" />
+          </>
+        )}
         {cola ? (
           <ColaEscalamientos filas={cola} onMarcar={(id, e) => void marcarEscalamiento(id, e)} />
         ) : (

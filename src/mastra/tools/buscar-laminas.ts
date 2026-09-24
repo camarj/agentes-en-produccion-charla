@@ -1,3 +1,4 @@
+import { SpanType } from "@mastra/core/observability";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
@@ -86,13 +87,18 @@ export function crearBuscarLaminas(deps: DependenciasBuscarLaminas) {
       } catch {
         salida = { error: "no_disponible" };
       }
-      spanActual(contexto)?.update({
+      const span = spanActual(contexto);
+      const fallo = "error" in salida;
+      span?.update({
         metadata: {
           intentos,
           interruptores_activos: activos,
           cantidad_resultados: "resultados" in salida ? salida.resultados.length : 0,
+          ...(fallo ? { falla_herramienta: true } : {}),
         },
       });
+      // En la raíz del turno, para que el panel cuente la falla aunque el agente responda.
+      if (fallo) span?.findParent?.(SpanType.AGENT_RUN)?.update({ metadata: { falla_herramienta: true } });
       return salida;
     },
   });

@@ -104,7 +104,7 @@ interface SpanMinimo {
 }
 
 export interface OpcionesFallbackModelo {
-  interruptores?: { obtenerTodos: () => Promise<Pick<Interruptores, "modelo_caido">> };
+  interruptores?: { obtenerTodos: () => Promise<Partial<Pick<Interruptores, "modelo_caido" | "modelos_caidos">>> };
   principal?: string;
   respaldo?: string;
 }
@@ -112,7 +112,10 @@ export interface OpcionesFallbackModelo {
 // Procesador de entrada por paso. Corre dentro del bucle de fallback de Mastra,
 // así que `model` es el modelo del intento actual:
 // - principal + `modelo_caido = on` → lo cambia por un modelo que falla (503 simulado);
+// - respaldo + `modelos_caidos = on` → también lo cambia por uno que falla;
 // - respaldo → marca `modelo_respaldo = true` en los spans del agente y del modelo.
+// Con `modelos_caidos = on` fallan los dos y el error llega a la ruta de chat
+// (falla técnica + escalamiento, T09).
 export class FallbackModelo implements Processor<"fallback-modelo"> {
   readonly id = "fallback-modelo" as const;
   readonly name = "Fallback de modelo";
@@ -126,11 +129,13 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
     this.respaldo = opciones.respaldo ?? MODELO_RESPALDO;
   }
 
-  private async modeloCaido(): Promise<boolean> {
+  private async caos(): Promise<{ principal: boolean; ambos: boolean }> {
     try {
-      return (await this.interruptores.obtenerTodos()).modelo_caido === "on";
+      const v = await this.interruptores.obtenerTodos();
+      const ambos = v.modelos_caidos === "on";
+      return { principal: ambos || v.modelo_caido === "on", ambos };
     } catch {
-      return false; // si no se pueden leer, se asume apagado
+      return { principal: false, ambos: false }; // si no se pueden leer, se asumen apagados
     }
   }
 
@@ -139,6 +144,11 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
     const actual = idModelo(model);
 
     if (actual === this.respaldo) {
+      // «Modelos caídos»: el respaldo también falla (nadie puede responder).
+      if ((await this.caos()).ambos) {
+        span?.update({ metadata: { modelos_caidos_simulado: true } });
+        return { model: crearModeloCaido(this.respaldo) as unknown as ProcessInputStepResult["model"] };
+      }
       const marca = { metadata: { modelo_respaldo: true, modelo_usado: actual } };
       span?.update(marca);
       span?.findParent?.(SpanType.AGENT_RUN)?.update(marca);
@@ -146,7 +156,7 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
       return undefined;
     }
 
-    if (actual === this.principal && (await this.modeloCaido())) {
+    if (actual === this.principal && (await this.caos()).principal) {
       span?.update({ metadata: { modelo_caido_simulado: true } });
       return { model: crearModeloCaido(this.principal) as unknown as ProcessInputStepResult["model"] };
     }

@@ -6,10 +6,12 @@ import {
   leerMetricasTrazas,
   motivoDeBloqueo,
   percentil,
+  tipoDeFalla,
   VENTANA_LATENCIA_MS,
   VENTANA_TOTALES_MS,
   type RaizTraza,
   type RamaProcesador,
+  type SpanDetalle,
 } from "./metricas-trazas";
 
 const AHORA = Date.parse("2026-09-26T19:00:00Z");
@@ -75,8 +77,10 @@ describe("calcularMetricasTrazas", () => {
     expect(calcularMetricasTrazas([], { ahora: AHORA })).toEqual({
       latencia: { p50Ms: null, p95Ms: null, muestras: 0 },
       errores: 0,
+      erroresPorTipo: {},
       bloqueos: { total: 0, porMotivo: {} },
       turnos: 0,
+      respaldo: { ultimaHora: 0, ultimaEn: null },
     });
   });
 
@@ -309,5 +313,166 @@ describe("crearLectorMetricasTrazas", () => {
     t += 4001;
     await leer();
     expect(store.listTracesLight.mock.calls.length).toBe(llamadas * 2);
+  });
+});
+
+// ---------- Modelo de respaldo y fallas técnicas (arreglos post-T14) ----------
+
+const span = (spanType: string, error: unknown = null, extra: Partial<SpanDetalle> = {}): SpanDetalle => ({
+  spanType,
+  status: error ? "error" : "success",
+  error,
+  ...extra,
+});
+
+describe("calcularMetricasTrazas · modelo de respaldo", () => {
+  it("cuenta las respuestas del respaldo de la última hora y da la hora de la última (sin evals)", () => {
+    const vieja = traza({ haceMin: 90, metadata: { modelo_respaldo: true, modelo_usado: "anthropic/claude-sonnet-5" } });
+    const reciente = traza({ haceMin: 3, metadata: { modelo_respaldo: true } });
+    const otra = traza({ haceMin: 30, metadata: { modelo_respaldo: true } });
+    const m = calcularMetricasTrazas(
+      [vieja, otra, reciente, traza(), traza({ haceMin: 1, metadata: { modelo_respaldo: true, origen: "eval" } })],
+      { ahora: AHORA },
+    );
+    expect(m.respaldo).toEqual({ ultimaHora: 2, ultimaEn: hace(3).toISOString() });
+  });
+
+  it("sin respaldo en la última hora, igual informa la última de la ventana", () => {
+    const m = calcularMetricasTrazas([traza({ haceMin: 200, metadata: { modelo_respaldo: true } })], { ahora: AHORA });
+    expect(m.respaldo).toEqual({ ultimaHora: 0, ultimaEn: hace(200).toISOString() });
+  });
+
+  it("una respuesta salvada por el respaldo no es una falla aunque el intento del principal dejó un span con error", () => {
+    const salvada = traza({ metadata: { modelo_respaldo: true } });
+    const m = calcularMetricasTrazas([salvada], {
+      ahora: AHORA,
+      trazasConErrorHijo: new Set([salvada.traceId]),
+      detalle: new Map([[salvada.traceId, [span("agent_run"), span("model_generation", { name: "APICallError", message: "Overloaded" })]]]),
+    });
+    expect(m.errores).toBe(0);
+    expect(m.latencia.muestras).toBe(1);
+  });
+});
+
+describe("tipoDeFalla", () => {
+  const raiz = (p: Partial<RaizTraza> = {}) => traza(p);
+
+  it("null si no hay error en la raíz ni en los hijos", () => {
+    expect(tipoDeFalla(raiz(), undefined, false)).toBeNull();
+  });
+
+  it("tiempo agotado: corte por los 45 s o abort", () => {
+    expect(tipoDeFalla(raiz({ status: "error", error: { name: "TimeoutError", message: "The operation was aborted due to timeout" } }), undefined, false)).toBe("tiempo");
+    expect(tipoDeFalla(raiz(), [span("model_generation", { name: "AbortError", message: "This operation was aborted" })], true)).toBe("tiempo");
+  });
+
+  it("herramienta: un span de herramienta con error", () => {
+    expect(tipoDeFalla(raiz(), [span("agent_run"), span("tool_call", { message: "no_disponible" })], true)).toBe("herramienta");
+    expect(tipoDeFalla(raiz(), [span("mcp_tool_call", { message: "x" })], true)).toBe("herramienta");
+  });
+
+  it("modelo: un span del modelo con error o un error de proveedor en la raíz", () => {
+    expect(tipoDeFalla(raiz(), [span("model_step", { message: "Overloaded" })], true)).toBe("modelo");
+    expect(tipoDeFalla(raiz({ status: "error", error: { name: "AI_APICallError", message: "Service Unavailable" } }), [], false)).toBe("modelo");
+  });
+
+  it("otro: error sin pistas", () => {
+    expect(tipoDeFalla(raiz({ status: "error", error: { message: "boom" } }), [span("agent_run", { message: "boom" })], false)).toBe("otro");
+    expect(tipoDeFalla(raiz(), undefined, true)).toBe("otro");
+  });
+
+  it("salvada por el respaldo: los errores del modelo no cuentan; otros sí", () => {
+    const salvada = raiz({ metadata: { modelo_respaldo: true } });
+    expect(tipoDeFalla(salvada, [span("model_generation", { message: "Overloaded" })], true)).toBeNull();
+    // Sin detalle, se asume que el error hijo fue el intento fallido del principal.
+    expect(tipoDeFalla(salvada, undefined, true)).toBeNull();
+    expect(tipoDeFalla(salvada, [span("model_step", { message: "Overloaded" }), span("tool_call", { message: "x" })], true)).toBe("herramienta");
+  });
+
+  it("los bloqueos de guardrail (span de procesador con guardrail) no son fallas", () => {
+    expect(
+      tipoDeFalla(raiz(), [span("processor_run", { message: "Solo puedo ayudarte…" }, { metadata: { guardrail: "alcance_charla" } })], true),
+    ).toBeNull();
+  });
+});
+
+describe("fallas de herramienta marcadas en la raíz (buscar_laminas agotó sus reintentos)", () => {
+  it("cuenta como «herramienta» aunque el turno terminó bien y no pide detalle", async () => {
+    const t = traza({ metadata: { falla_herramienta: true } });
+    expect(tipoDeFalla(t, undefined, false)).toBe("herramienta");
+    const store = { ...storeFalso([t, traza()]), getTraceLight: vi.fn(async () => ({ spans: [] })) };
+    const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
+    expect(m).toMatchObject({ errores: 1, erroresPorTipo: { herramienta: 1 } });
+    expect(store.getTraceLight).not.toHaveBeenCalled();
+    // Sigue midiendo latencia: el asistente sí recibió una respuesta.
+    expect(m?.latencia.muestras).toBe(2);
+  });
+
+  it("también con el respaldo: la herramienta falló aunque el respaldo respondió", () => {
+    expect(tipoDeFalla(traza({ metadata: { falla_herramienta: true, modelo_respaldo: true } }), undefined, false)).toBe("herramienta");
+  });
+
+  it("ningún modelo pudo responder (fallan los dos): «modelo»", () => {
+    const raiz = traza({ status: "error", error: { name: "AI_APICallError", message: "Overloaded (simulado por el interruptor modelo_caido)" } });
+    expect(tipoDeFalla(raiz, [span("model_generation", { message: "Overloaded" })], false)).toBe("modelo");
+  });
+});
+
+describe("calcularMetricasTrazas · fallas por tipo", () => {
+  it("desglosa las fallas por tipo y no cuenta bloqueos", () => {
+    const a = traza({ status: "error", error: { name: "TimeoutError", message: "aborted due to timeout" } });
+    const b = traza();
+    const c = traza();
+    const d = traza({ status: "error", error: { message: "boom" } });
+    const bloqueo = traza({ metadata: { guardrail: "g", motivo: "inyeccion" } });
+    const m = calcularMetricasTrazas([a, b, c, d, bloqueo, traza()], {
+      ahora: AHORA,
+      trazasConErrorHijo: new Set([b.traceId, c.traceId, bloqueo.traceId]),
+      detalle: new Map([
+        [b.traceId, [span("tool_call", { message: "x" })]],
+        [c.traceId, [span("model_generation", { message: "Overloaded" })]],
+      ]),
+    });
+    expect(m.errores).toBe(4);
+    expect(m.erroresPorTipo).toEqual({ tiempo: 1, herramienta: 1, modelo: 1, otro: 1 });
+    expect(m.bloqueos.total).toBe(1);
+  });
+});
+
+describe("leerMetricasTrazas · detalle de fallas", () => {
+  it("pide el detalle (getTraceLight) solo de las trazas con error y clasifica", async () => {
+    const ok = traza();
+    const herramienta = traza();
+    const store = {
+      ...storeFalso([ok, herramienta], [herramienta.traceId]),
+      getTraceLight: vi.fn(async ({ traceId }: { traceId: string }) => ({
+        traceId,
+        spans: [span("agent_run"), span("tool_call", { message: "no_disponible" })],
+      })),
+    };
+    const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
+    expect(m).toMatchObject({ errores: 1, erroresPorTipo: { herramienta: 1 } });
+    expect(store.getTraceLight.mock.calls.map((c) => c[0].traceId)).toEqual([herramienta.traceId]);
+  });
+
+  it("si getTraceLight falla o no existe, cuenta la falla como «otro» (nunca lanza)", async () => {
+    const t = traza({ status: "error", error: { message: "boom" } });
+    const sinDetalle = storeFalso([t]);
+    expect(await leerMetricasTrazas(async () => sinDetalle, { ahora: () => AHORA })).toMatchObject({ errores: 1, erroresPorTipo: { otro: 1 } });
+    const conFalla = { ...storeFalso([t]), getTraceLight: vi.fn(async () => Promise.reject(new Error("x"))) };
+    expect(await leerMetricasTrazas(async () => conFalla, { ahora: () => AHORA })).toMatchObject({ errores: 1, erroresPorTipo: { otro: 1 } });
+  });
+
+  it("no pide detalle de bloqueos, evals ni respuestas del respaldo sin error hijo", async () => {
+    const bloqueo = traza({ metadata: { guardrail: "g", motivo: "inyeccion" } });
+    const evalT = traza({ status: "error", error: {}, metadata: { origen: "eval" } });
+    const respaldo = traza({ metadata: { modelo_respaldo: true } });
+    const store = {
+      ...storeFalso([bloqueo, evalT, respaldo], [bloqueo.traceId, evalT.traceId]),
+      getTraceLight: vi.fn(async ({ traceId }: { traceId: string }) => ({ traceId, spans: [] })),
+    };
+    const m = await leerMetricasTrazas(async () => store, { ahora: () => AHORA });
+    expect(store.getTraceLight).not.toHaveBeenCalled();
+    expect(m).toMatchObject({ errores: 0, respaldo: { ultimaHora: 1 } });
   });
 });

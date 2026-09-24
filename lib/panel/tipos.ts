@@ -4,7 +4,7 @@
 export const LAMINA_MIN = 1;
 export const LAMINA_MAX = 39;
 
-export const CLAVES_CAOS = ["herramienta_caida", "latencia_alta", "modelo_caido"] as const;
+export const CLAVES_CAOS = ["herramienta_caida", "latencia_alta", "modelo_caido", "modelos_caidos"] as const;
 export type ClaveCaos = (typeof CLAVES_CAOS)[number];
 export type ClaveActivable = ClaveCaos | "kill_switch";
 export type ValorOnOff = "on" | "off";
@@ -39,9 +39,13 @@ export interface MetricasPanel {
         latencia_p50_ms: number | null;
         latencia_p95_ms: number | null;
         muestras_latencia: number;
+        // Fallas técnicas (12 h) y su desglose: tiempo, herramienta, modelo, otro.
         errores: number;
+        errores_por_tipo: Partial<Record<"tiempo" | "herramienta" | "modelo" | "otro", number>>;
         bloqueos: { total: number; por_motivo: Record<string, number> };
         turnos: number;
+        // Respuestas servidas por el modelo de respaldo.
+        respaldo: { ultima_hora: number; ultima_en: string | null };
       };
   actualizado_en: string;
 }

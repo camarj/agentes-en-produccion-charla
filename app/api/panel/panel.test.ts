@@ -114,8 +114,10 @@ describe("GET /api/panel/metricas", () => {
     const obs: MetricasTrazas = {
       latencia: { p50Ms: 2900, p95Ms: 6700, muestras: 10 },
       errores: 2,
+      erroresPorTipo: { tiempo: 1, herramienta: 1 },
       bloqueos: { total: 3, porMotivo: { inyeccion: 1, fuera_de_alcance: 2 } },
       turnos: 15,
+      respaldo: { ultimaHora: 4, ultimaEn: "2026-09-26T18:55:00.000Z" },
     };
     estado.leerObservabilidad.mockResolvedValue(obs);
     const cuerpo = await (await metricas()).json();
@@ -125,8 +127,10 @@ describe("GET /api/panel/metricas", () => {
       latencia_p95_ms: 6700,
       muestras_latencia: 10,
       errores: 2,
+      errores_por_tipo: { tiempo: 1, herramienta: 1 },
       bloqueos: { total: 3, por_motivo: { inyeccion: 1, fuera_de_alcance: 2 } },
       turnos: 15,
+      respaldo: { ultima_hora: 4, ultima_en: "2026-09-26T18:55:00.000Z" },
     });
   });
 
@@ -153,9 +157,17 @@ describe("/api/panel/interruptores", () => {
   it("GET: valores, lámina como número y última activación", async () => {
     const cuerpo = await (await leerInterruptores()).json();
     expect(cuerpo).toEqual({
-      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", kill_switch: "off", lamina_actual: 1 },
-      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, kill_switch: null },
+      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 1 },
+      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
     });
+  });
+
+  it("POST acepta modelos_caidos (fallan el principal y el respaldo) y guarda su activación", async () => {
+    const cuerpo = await (await cambiar({ clave: "modelos_caidos", valor: "on" })).json();
+    expect(cuerpo.valores.modelos_caidos).toBe("on");
+    expect(cuerpo.ultimas_activaciones.modelos_caidos).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect((await interruptores.obtenerTodos()).modelos_caidos).toBe("on");
+    expect((await cambiar({ clave: "modelos_caidos", valor: "tal vez" })).status).toBe(400);
   });
 
   it("POST enciende y apaga, registra la hora de activación y el chat lo ve al instante", async () => {

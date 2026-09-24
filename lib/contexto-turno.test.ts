@@ -17,6 +17,7 @@ const valores: Interruptores = {
   herramienta_caida: "on",
   latencia_alta: "off",
   modelo_caido: "on",
+  modelos_caidos: "off",
   kill_switch: "off",
   lamina_actual: "21",
 };

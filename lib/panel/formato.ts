@@ -47,3 +47,17 @@ const legible = (clave: string) => clave.replaceAll("_", " ");
 export const etiquetaMotivoEscalamiento = (m: string) => MOTIVOS_ESCALAMIENTO[m] ?? legible(m);
 export const etiquetaMotivoBloqueo = (m: string) => MOTIVOS_BLOQUEO[m] ?? legible(m);
 export const etiquetaRol = (r: string) => ROLES[r] ?? legible(r);
+
+// Tipos de falla técnica, en el orden en que se muestran.
+const TIPOS_FALLA: [string, string][] = [
+  ["herramienta", "herramienta"],
+  ["modelo", "modelo"],
+  ["tiempo", "tiempo agotado"],
+  ["otro", "otro"],
+];
+
+// «1 herramienta · 1 modelo · 2 tiempo agotado», o null si no hay fallas.
+export function desgloseFallas(porTipo: Partial<Record<string, number>>): string | null {
+  const partes = TIPOS_FALLA.filter(([t]) => (porTipo[t] ?? 0) > 0).map(([t, etiqueta]) => `${porTipo[t]} ${etiqueta}`);
+  return partes.length > 0 ? partes.join(" · ") : null;
+}

@@ -16,6 +16,7 @@ describe("interruptores", () => {
       herramienta_caida: "off",
       latencia_alta: "off",
       modelo_caido: "off",
+      modelos_caidos: "off",
       kill_switch: "off",
       lamina_actual: "1",
     });
@@ -47,6 +48,7 @@ describe("interruptores", () => {
       herramienta_caida: null,
       latencia_alta: null,
       modelo_caido: null,
+      modelos_caidos: null,
       kill_switch: null,
     });
     await db.cliente.execute(`INSERT INTO eventos_interruptor (clave, valor, creado_en) VALUES
@@ -60,6 +62,7 @@ describe("interruptores", () => {
       herramienta_caida: "2026-09-26T18:10:00Z",
       latencia_alta: null,
       modelo_caido: null,
+      modelos_caidos: null,
       kill_switch: "2026-09-26T18:20:30Z",
     });
   });

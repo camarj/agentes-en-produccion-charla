@@ -43,7 +43,12 @@ export async function GET(request: NextRequest) {
   try {
     if (!(await leerSesion(request))) return noAutenticado();
     const { lamina_actual } = await interruptores.obtenerTodos();
-    return NextResponse.json({ sugerencias: preguntasPara(lamina_actual) });
+    // Next 16 no guarda en caché los GET de un route handler (y este lee la
+    // cookie); igual se pide explícitamente que nadie en el camino lo guarde.
+    return NextResponse.json(
+      { sugerencias: preguntasPara(lamina_actual) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return errorInterno("sugerencias", error);
   }

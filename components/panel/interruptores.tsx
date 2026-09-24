@@ -13,6 +13,7 @@ const CAOS: Record<(typeof CLAVES_CAOS)[number], { titulo: string; efecto: strin
   herramienta_caida: { titulo: "Herramienta caída", efecto: "La búsqueda en láminas falla: reintentos y escalamiento." },
   latencia_alta: { titulo: "Latencia alta", efecto: "Cada búsqueda en láminas tarda 8 s por intento." },
   modelo_caido: { titulo: "Modelo caído", efecto: "El modelo principal falla y responde el de respaldo." },
+  modelos_caidos: { titulo: "Modelos caídos", efecto: "Fallan el principal y el respaldo: falla técnica y escalamiento." },
 };
 
 type OnCambiar = (clave: ClaveActivable, valor: ValorOnOff) => void;
@@ -59,6 +60,9 @@ export function InterruptoresCaos({ estado, onCambiar }: { estado: EstadoInterru
                   {activo ? <span className="ml-3 font-mono text-base font-medium">ACTIVO</span> : null}
                 </p>
                 <p className="text-base text-muted-foreground">{CAOS[clave].efecto}</p>
+                {activo && clave === "modelo_caido" ? (
+                  <p className="text-base font-medium text-foreground">Responde el modelo de respaldo</p>
+                ) : null}
               </div>
               <p className="shrink-0 font-mono text-base text-muted-foreground">
                 {ultimaActivacion(estado.ultimas_activaciones[clave])}

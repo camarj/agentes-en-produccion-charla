@@ -234,6 +234,12 @@ describe("GET /api/sugerencias", () => {
     return lista as string[];
   }
 
+  it("nunca se guarda en caché (el chat las vuelve a pedir cada 30 s)", async () => {
+    const { cookie } = await identificarCon(`nc${ipSiguiente}@e.com`);
+    const r = await sugerencias(peticion("/api/sugerencias", { cookie }));
+    expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("devuelve 3 preguntas por tramo de lámina", async () => {
     const t1 = await sugerenciasEn("1");
     expect(await sugerenciasEn("13")).toEqual(t1);

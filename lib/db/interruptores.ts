@@ -5,6 +5,7 @@ export const CLAVES_INTERRUPTOR = [
   "herramienta_caida",
   "latencia_alta",
   "modelo_caido",
+  "modelos_caidos",
   "kill_switch",
   "lamina_actual",
 ] as const;
@@ -13,13 +14,15 @@ export type ClaveInterruptor = (typeof CLAVES_INTERRUPTOR)[number];
 export type Interruptores = Record<ClaveInterruptor, string>;
 
 // Interruptores de encendido/apagado (todos menos `lamina_actual`).
-export const CLAVES_ON_OFF = ["herramienta_caida", "latencia_alta", "modelo_caido", "kill_switch"] as const;
+export const CLAVES_ON_OFF = ["herramienta_caida", "latencia_alta", "modelo_caido", "modelos_caidos", "kill_switch"] as const;
 export type ClaveOnOff = (typeof CLAVES_ON_OFF)[number];
 
 const VALORES_POR_DEFECTO: Interruptores = {
   herramienta_caida: "off",
   latencia_alta: "off",
   modelo_caido: "off",
+  // Fallan el principal y el respaldo (caos): falla técnica + escalamiento.
+  modelos_caidos: "off",
   kill_switch: "off",
   lamina_actual: "1",
 };

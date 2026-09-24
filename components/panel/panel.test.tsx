@@ -20,9 +20,11 @@ function metricasBase(): MetricasPanel {
       latencia_p50_ms: 2900,
       latencia_p95_ms: 6700,
       muestras_latencia: 10,
-      errores: 1,
+      errores: 4,
+      errores_por_tipo: { tiempo: 2, herramienta: 1, modelo: 1 },
       bloqueos: { total: 4, por_motivo: { fuera_de_alcance: 3, inyeccion: 1 } },
       turnos: 20,
+      respaldo: { ultima_hora: 3, ultima_en: "2026-09-26T17:58:00.000Z" },
     },
     actualizado_en: "2026-09-26T18:00:00.000Z",
   };
@@ -30,8 +32,8 @@ function metricasBase(): MetricasPanel {
 
 function interruptoresBase(): EstadoInterruptores {
   return {
-    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", kill_switch: "off", lamina_actual: 12 },
-    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, kill_switch: null },
+    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 12 },
+    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
   };
 }
 
@@ -85,6 +87,26 @@ async function montar(studioUrl: string | null = "https://studio.ejemplo.com") {
 }
 
 describe("Panel del speaker", () => {
+  it("sin fallas ni respaldo: 0 y sin desglose", async () => {
+    metricas.observabilidad = { ...(metricas.observabilidad as Extract<MetricasPanel["observabilidad"], { disponible: true }>), errores: 0, errores_por_tipo: {}, respaldo: { ultima_hora: 0, ultima_en: null } };
+    await montar();
+    expect(within(metrica("Fallas técnicas")).getByText("0")).toBeTruthy();
+    expect(within(metrica("Fallas técnicas")).queryByText(/tiempo agotado/)).toBeNull();
+    expect(within(metrica("Modelo de respaldo")).getByText("0")).toBeTruthy();
+    expect(within(metrica("Modelo de respaldo")).getByText("última hora")).toBeTruthy();
+  });
+
+  it("con «Modelo caído» encendido, su fila dice que responde el respaldo", async () => {
+    estadoInt.valores.modelo_caido = "on";
+    await montar();
+    expect(screen.getByText("Responde el modelo de respaldo")).toBeTruthy();
+  });
+
+  it("con «Modelo caído» apagado no aparece el aviso", async () => {
+    await montar();
+    expect(screen.queryByText("Responde el modelo de respaldo")).toBeNull();
+  });
+
   it("muestra las métricas y los votos (solo conteos)", async () => {
     await montar();
     expect(within(metrica("Asistentes activos")).getByText("7")).toBeTruthy();
@@ -92,7 +114,13 @@ describe("Panel del speaker", () => {
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
     expect(within(metrica("Latencia p50 (última hora)")).getByText("2,9 s")).toBeTruthy();
     expect(within(metrica("Latencia p95 (última hora)")).getByText("6,7 s")).toBeTruthy();
-    expect(within(metrica("Errores")).getByText("1")).toBeTruthy();
+    const fallas = metrica("Fallas técnicas");
+    expect(within(fallas).getByText("4")).toBeTruthy();
+    expect(within(fallas).getByText("fallas de herramientas o modelos (12 h)")).toBeTruthy();
+    expect(within(fallas).getByText("1 herramienta · 1 modelo · 2 tiempo agotado")).toBeTruthy();
+    const respaldo = metrica("Modelo de respaldo");
+    expect(within(respaldo).getByText("3")).toBeTruthy();
+    expect(within(respaldo).getByText(/última hora · la última a las \d{2}:\d{2}/)).toBeTruthy();
     const bloqueos = metrica("Bloqueos de guardrails");
     expect(within(bloqueos).getByText("4")).toBeTruthy();
     expect(within(bloqueos).getByText(/Fuera de alcance 3/)).toBeTruthy();
@@ -113,7 +141,7 @@ describe("Panel del speaker", () => {
   it("observabilidad no disponible: «—» en latencia, errores y bloqueos; el resto se ve", async () => {
     metricas.observabilidad = { disponible: false };
     await montar();
-    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Errores", "Bloqueos de guardrails"]) {
+    for (const nombre of ["Latencia p50 (última hora)", "Latencia p95 (última hora)", "Fallas técnicas", "Bloqueos de guardrails", "Modelo de respaldo"]) {
       expect(within(metrica(nombre)).getByText("—")).toBeTruthy();
     }
     expect(screen.getByText(/Trazas no disponibles por ahora/)).toBeTruthy();
@@ -181,7 +209,9 @@ describe("Panel del speaker", () => {
       const sw = await screen.findByRole("switch", { name: "Herramienta caída" });
       expect(sw.getAttribute("aria-checked")).toBe("false");
       expect(screen.getByText(/Última activación: \d{2}:\d{2}/)).toBeTruthy();
-      expect(screen.getAllByText("Nunca activado").length).toBe(2);
+      expect(screen.getAllByText("Nunca activado").length).toBe(3);
+      expect(screen.getByRole("switch", { name: "Modelos caídos" })).toBeTruthy();
+      expect(screen.getByText("Fallan el principal y el respaldo: falla técnica y escalamiento.")).toBeTruthy();
       await u.click(sw);
       expect(posts.at(-1)?.cuerpo).toEqual({ clave: "herramienta_caida", valor: "on" });
       await waitFor(() => expect(screen.getByRole("switch", { name: "Herramienta caída" }).getAttribute("aria-checked")).toBe("true"));

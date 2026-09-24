@@ -12,6 +12,8 @@ async function obtenerStore(): Promise<StoreTrazas | undefined> {
   if (!store) return undefined;
   return {
     listTracesLight: (args) => store.listTracesLight(args),
+    // Detalle liviano de una traza con falla (para saber su tipo).
+    getTraceLight: (args) => store.getTraceLight(args),
     listBranches: ({ filters, pagination }) =>
       store.listBranches({
         filters: { spanType: SpanType.PROCESSOR_RUN, status: TraceStatus.ERROR, startedAt: filters.startedAt },

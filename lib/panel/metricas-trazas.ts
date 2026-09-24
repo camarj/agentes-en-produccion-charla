@@ -29,12 +29,28 @@ export interface RaizTraza {
   metadata?: Record<string, unknown> | null;
 }
 
+// Tipo de una falla técnica (respuesta que no se pudo completar).
+export type TipoFalla = "tiempo" | "herramienta" | "modelo" | "otro";
+
 export interface MetricasTrazas {
   latencia: { p50Ms: number | null; p95Ms: number | null; muestras: number };
+  // Fallas técnicas (12 h): nunca incluye bloqueos ni respuestas salvadas por el respaldo.
   errores: number;
+  erroresPorTipo: Partial<Record<TipoFalla, number>>;
   bloqueos: { total: number; porMotivo: Record<string, number> };
   // Turnos del agente en la ventana de 12 h (incluye bloqueados).
   turnos: number;
+  // Respuestas servidas por el modelo de respaldo (FallbackModelo marca
+  // `modelo_respaldo: true` en la metadata de `agent_run`).
+  respaldo: { ultimaHora: number; ultimaEn: string | null };
+}
+
+// Lo que usamos de cada span del detalle de una traza (getTraceLight).
+export interface SpanDetalle {
+  spanType: string;
+  status?: string | null;
+  error?: unknown;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface PaginaTrazas {
@@ -49,6 +65,8 @@ export interface RamaProcesador {
 }
 
 export interface StoreTrazas {
+  // Detalle liviano de una traza (Postgres y LibSQL lo implementan).
+  getTraceLight?(args: { traceId: string }): Promise<{ spans: SpanDetalle[] } | null>;
   listTracesLight(args: {
     filters: { entityId: string; startedAt: { start: Date }; hasChildError?: boolean };
     pagination: { page: number; perPage: number };
@@ -77,6 +95,58 @@ export function motivoDeBloqueo(metadata: Record<string, unknown> | null | undef
   return null;
 }
 
+const TIPOS_HERRAMIENTA = new Set(["tool_call", "mcp_tool_call", "client_tool_call", "provider_tool_call"]);
+const TIPOS_MODELO = new Set(["model_generation", "model_step", "model_chunk"]);
+const PISTA_TIEMPO = /timeout|timed out|tiempo_agotado|abort/i;
+const PISTA_MODELO = /api_?call|overloaded|rate.?limit|provider|server_error|service unavailable|status code 5\d\d/i;
+
+const conError = (s: SpanDetalle) => s.status === "error" || (s.error != null && s.error !== false);
+
+// Texto del error (nombre, mensaje, id, categoría) para buscar pistas. Nunca se muestra.
+function pistas(error: unknown): string {
+  if (error == null || error === false) return "";
+  if (typeof error === "string") return error;
+  if (typeof error !== "object") return "";
+  const e = error as Record<string, unknown>;
+  return ["name", "message", "id", "category", "domain", "code"]
+    .map((k) => (typeof e[k] === "string" ? e[k] : ""))
+    .join(" ");
+}
+
+// ¿Es una falla técnica y de qué tipo? null = no es una falla. Los bloqueos de
+// guardrail y los errores del modelo principal en una respuesta que salvó el
+// respaldo no cuentan. `spans` = detalle de la traza (undefined si no se pudo leer).
+export function tipoDeFalla(raiz: RaizTraza, spans: readonly SpanDetalle[] | undefined, conErrorHijo: boolean): TipoFalla | null {
+  const errorRaiz = raiz.status === "error" || (raiz.error != null && raiz.error !== false);
+  // buscar_laminas agotó sus reintentos (lo marca en la raíz), aunque el agente haya respondido.
+  if (raiz.metadata?.falla_herramienta === true) return "herramienta";
+  if (!errorRaiz && !conErrorHijo) return null;
+  const salvada = !errorRaiz && raiz.metadata?.modelo_respaldo === true;
+
+  if (!spans) return salvada ? null : PISTA_TIEMPO.test(pistas(raiz.error)) ? "tiempo" : PISTA_MODELO.test(pistas(raiz.error)) ? "modelo" : "otro";
+
+  const fallidos = spans.filter(
+    (s) =>
+      s.spanType !== "agent_run" &&
+      conError(s) &&
+      !(s.spanType === "processor_run" && typeof s.metadata?.guardrail === "string") &&
+      !(salvada && TIPOS_MODELO.has(s.spanType)),
+  );
+  if (!errorRaiz && fallidos.length === 0) return null;
+
+  const texto = [pistas(raiz.error), ...fallidos.map((s) => pistas(s.error))].join(" ");
+  if (PISTA_TIEMPO.test(texto)) return "tiempo";
+  if (fallidos.some((s) => TIPOS_HERRAMIENTA.has(s.spanType))) return "herramienta";
+  if (fallidos.some((s) => TIPOS_MODELO.has(s.spanType)) || PISTA_MODELO.test(texto)) return "modelo";
+  return "otro";
+}
+
+// ¿Hay que pedir el detalle de esta raíz para clasificar su falla?
+export function esCandidataAFalla(r: RaizTraza, conErrorHijo: ReadonlySet<string>): boolean {
+  if (esTrazaDeEval(r.metadata) || motivoDeBloqueo(r.metadata) || r.metadata?.falla_herramienta === true) return false;
+  return r.status === "error" || (r.error != null && r.error !== false) || conErrorHijo.has(r.traceId);
+}
+
 const ms = (f: Fecha | null | undefined) => (f == null ? Number.NaN : new Date(f).getTime());
 
 export function calcularMetricasTrazas(
@@ -85,18 +155,24 @@ export function calcularMetricasTrazas(
     ahora,
     trazasConErrorHijo = new Set<string>(),
     bloqueosEnHijos = new Map<string, string>(),
+    detalle = new Map<string, SpanDetalle[]>(),
   }: {
     ahora: number;
     trazasConErrorHijo?: ReadonlySet<string>;
     // traceId → motivo de un bloqueo registrado en un span hijo (procesador).
     bloqueosEnHijos?: ReadonlyMap<string, string>;
+    // traceId → spans de la traza, para clasificar sus fallas.
+    detalle?: ReadonlyMap<string, SpanDetalle[]>;
   },
 ): MetricasTrazas {
   const duraciones: number[] = [];
   const porMotivo: Record<string, number> = {};
   let bloqueos = 0;
   let errores = 0;
+  const erroresPorTipo: Partial<Record<TipoFalla, number>> = {};
   let turnos = 0;
+  let respaldoHora = 0;
+  let ultimoRespaldo = Number.NEGATIVE_INFINITY;
 
   for (const r of raices) {
     const inicio = ms(r.startedAt);
@@ -104,6 +180,11 @@ export function calcularMetricasTrazas(
     // Turnos del runner de evals: no son tráfico de asistentes.
     if (esTrazaDeEval(r.metadata)) continue;
     turnos++;
+
+    if (r.metadata?.modelo_respaldo === true) {
+      if (inicio >= ahora - VENTANA_LATENCIA_MS) respaldoHora++;
+      ultimoRespaldo = Math.max(ultimoRespaldo, inicio);
+    }
 
     // Un bloqueo es un turno terminado para el asistente aunque la traza haya
     // quedado abierta o con error (bloqueo a mitad de una herramienta, T09).
@@ -116,10 +197,13 @@ export function calcularMetricasTrazas(
       continue;
     }
 
-    const conError = r.status === "error" || (r.error != null && r.error !== false) || trazasConErrorHijo.has(r.traceId);
-    if (conError) {
+    const tipo = tipoDeFalla(r, detalle.get(r.traceId), trazasConErrorHijo.has(r.traceId));
+    if (tipo) {
       errores++;
-      continue;
+      erroresPorTipo[tipo] = (erroresPorTipo[tipo] ?? 0) + 1;
+      // Una falla de herramienta con respuesta completa sigue contando en la latencia.
+      const sinRespuesta = r.status === "error" || (r.error != null && r.error !== false) || trazasConErrorHijo.has(r.traceId);
+      if (sinRespuesta || tipo !== "herramienta") continue;
     }
 
     const fin = ms(r.endedAt);
@@ -129,8 +213,13 @@ export function calcularMetricasTrazas(
   return {
     latencia: { p50Ms: percentil(duraciones, 50), p95Ms: percentil(duraciones, 95), muestras: duraciones.length },
     errores,
+    erroresPorTipo,
     bloqueos: { total: bloqueos, porMotivo },
     turnos,
+    respaldo: {
+      ultimaHora: respaldoHora,
+      ultimaEn: Number.isFinite(ultimoRespaldo) ? new Date(ultimoRespaldo).toISOString() : null,
+    },
   };
 }
 
@@ -177,6 +266,25 @@ async function bloqueosEnProcesadores(store: StoreTrazas, desde: Date, porPagina
   return salida;
 }
 
+// Las fallas son pocas: se pide el detalle liviano de cada una (máx. 30) para
+// saber su tipo. Si una lectura falla, esa traza queda sin detalle («otro»).
+const DETALLES_MAXIMOS = 30;
+async function detalleDeFallas(store: StoreTrazas, traceIds: string[]): Promise<Map<string, SpanDetalle[]>> {
+  const salida = new Map<string, SpanDetalle[]>();
+  if (typeof store.getTraceLight !== "function") return salida;
+  await Promise.all(
+    traceIds.slice(0, DETALLES_MAXIMOS).map(async (traceId) => {
+      try {
+        const t = await store.getTraceLight!({ traceId });
+        if (t && Array.isArray(t.spans)) salida.set(traceId, t.spans);
+      } catch {
+        // sin detalle: se clasifica con la raíz
+      }
+    }),
+  );
+  return salida;
+}
+
 function conTope<T>(promesa: Promise<T>, tiempoMs: number): Promise<T> {
   let temporizador: ReturnType<typeof setTimeout> | undefined;
   const tope = new Promise<never>((_, rechazar) => {
@@ -210,11 +318,12 @@ export async function leerMetricasTrazas(
           todasLasPaginas(store, { ...base, hasChildError: true }, porPagina),
           bloqueosEnProcesadores(store, base.startedAt.start, porPagina),
         ]);
-        return calcularMetricasTrazas(raices, {
-          ahora: momento,
-          trazasConErrorHijo: new Set(conErrorHijo.map((r) => r.traceId)),
-          bloqueosEnHijos,
-        });
+        const trazasConErrorHijo = new Set(conErrorHijo.map((r) => r.traceId));
+        const candidatas = raices
+          .filter((r) => !bloqueosEnHijos.has(r.traceId) && esCandidataAFalla(r, trazasConErrorHijo))
+          .map((r) => r.traceId);
+        const detalle = await detalleDeFallas(store, candidatas);
+        return calcularMetricasTrazas(raices, { ahora: momento, trazasConErrorHijo, bloqueosEnHijos, detalle });
       })(),
       timeoutMs,
     );
