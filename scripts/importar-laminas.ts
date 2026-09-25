@@ -35,9 +35,35 @@ function extraerNotas(seccion: HTMLElement): string | null {
   return notas || null;
 }
 
+// Notas escritas como lista JSON al final del HTML (<script id="speaker-notes">):
+// la entrada N corresponde a la lámina N.
+function notasDeLista(raiz: HTMLElement): string[] {
+  const script = raiz.querySelector('script#speaker-notes');
+  if (!script) return [];
+  try {
+    const lista: unknown = JSON.parse(script.text);
+    return Array.isArray(lista) ? lista.map((n) => (typeof n === "string" ? n : "")) : [];
+  } catch {
+    throw new Error('La lista de notas (script#speaker-notes) no es un JSON válido');
+  }
+}
+
+// Conserva párrafos y saltos de línea (viñetas); colapsa espacios dentro de cada línea.
+function limpiarNota(nota: string | undefined): string | null {
+  if (!nota) return null;
+  const limpia = nota
+    .split("\n")
+    .map((linea) => linea.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return limpia || null;
+}
+
 export function extraerLaminas(html: string): Lamina[] {
   // closeAllByClosing: una sección con <div> sin cerrar se cierra en </section>, como en el navegador.
   const raiz = parse(html, { closeAllByClosing: true, comment: false });
+  const lista = notasDeLista(raiz);
   const laminas: Lamina[] = [];
   const vistos = new Set<number>();
   for (const seccion of raiz.querySelectorAll("section.slide")) {
@@ -46,7 +72,7 @@ export function extraerLaminas(html: string): Lamina[] {
     const numero = Number(coincide[1]);
     if (vistos.has(numero)) throw new Error(`La lámina ${numero} aparece dos veces en el HTML`);
     vistos.add(numero);
-    const notas = extraerNotas(seccion);
+    const notas = extraerNotas(seccion) ?? limpiarNota(lista[numero - 1]);
     const copia = seccion.clone() as HTMLElement;
     for (const n of copia.querySelectorAll(EXCLUIDOS)) n.remove();
     laminas.push({ numero, titulo: colapsar(coincide[2]), contenido: colapsar(textoPlano(copia)), notas });

@@ -68,3 +68,26 @@ describe("importarLaminas", () => {
     expect(await crearLaminas(db.fuente).buscar("zumbacalabaza")).toHaveLength(1);
   });
 });
+
+describe("extraerLaminas con notas en <script id=\"speaker-notes\">", () => {
+  const conJson = fs.readFileSync(path.join(__dirname, "fixtures/presentacion-notas-json.html"), "utf8");
+  const laminas = extraerLaminas(conJson);
+
+  it("toma la nota N de la lista JSON para la lámina N cuando el aside está vacío", () => {
+    expect(laminas[0].notas).toBe("Apertura\n\nLínea uno con espacios.\nLínea dos con la palabra quimerafonte.\n\nCierre.");
+    expect(laminas[2].notas).toBe("Solo JSON\n\n• Viñeta uno\n• Viñeta dos");
+  });
+
+  it("el aside con texto tiene prioridad sobre la lista JSON", () => {
+    expect(laminas[1].notas).toBe("Nota escrita en el aside.");
+  });
+
+  it("notas vacías o láminas sin entrada en la lista quedan en null", () => {
+    expect(laminas[3].notas).toBeNull();
+    expect(laminas[4].notas).toBeNull();
+  });
+
+  it("el JSON de notas no se cuela en el contenido visible", () => {
+    for (const l of laminas) expect(l.contenido).not.toContain("quimerafonte");
+  });
+});
