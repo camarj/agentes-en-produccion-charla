@@ -16,6 +16,13 @@ import {
 const PERFIL = `Hola\n\n<perfil_asistente uso="solo interno">\nNombre de pila: Zoraida\nA qué se dedica: Contadora pública\nQué construye o quiere construir con IA: un bot de facturas\nUsa este perfil…\n</perfil_asistente>\n\n<como_responder>…`;
 
 describe("redactarTexto", () => {
+  // Un perfil con guion («e-commerce») rompía la regex y la traza entera quedaba en «[redactado]».
+  it("acepta términos con guion y conserva el resto del texto", () => {
+    expect(redactarTexto("Quiero un chatbot de e-commerce, ¿qué es un eval?", ["chatbot de e-commerce", "co-fundadora"])).toBe(
+      "Quiero un [redactado], ¿qué es un eval?",
+    );
+  });
+
   it("quita emails", () => {
     expect(redactarTexto("escríbeme a juan.perez@empresa.com.ec o a ANA@x.io")).toBe(
       "escríbeme a [email] o a [email]",

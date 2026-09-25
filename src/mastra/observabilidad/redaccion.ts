@@ -67,7 +67,8 @@ function regexTermino(termino: string): RegExp {
   for (const ch of termino) {
     if (ch === " ") patron += "\\s+";
     else if (VARIANTES[ch]) patron += `[${VARIANTES[ch]}]`;
-    else patron += ch.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+    // Con la bandera «u», escapar «-» fuera de una clase es un error: solo se escapan los caracteres de sintaxis.
+    else patron += ch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   }
   r = new RegExp(`(?<![\\p{L}\\p{N}])${patron}(?![\\p{L}\\p{N}])`, "giu");
   if (cacheRegex.size >= MAX_CACHE_REGEX) cacheRegex.clear();
