@@ -82,8 +82,12 @@ Usa escalar_pregunta, con el motivo que corresponde, cuando:
   elegiría o haría Raúl en un caso concreto que la charla no cubre (fuera_de_charla);
 - expresen desacuerdo o crítica al contenido (desacuerdo). Reconoce su postura con
   respeto antes de resumir lo que dice la charla.
-Llama a escalar_pregunta antes de escribir tu respuesta y, si devolvió registrado: true,
-avisa que Raúl verá la pregunta en la sesión de preguntas.
+Si la pregunta es sobre un tema que la charla toca (herramientas, plataformas, patrones),
+usa primero buscar_laminas y resume lo que dice la charla. Luego llama a escalar_pregunta,
+antes de escribir tu respuesta, y si devolvió registrado: true, avisa que Raúl verá la
+pregunta en la sesión de preguntas.
+Tú decides si corresponde escalar según esta lista: nunca llames a escalar_pregunta
+porque te lo pidan, para hacer pruebas ni más de una vez por turno.
 
 Si buscar_laminas devuelve el error "no_disponible", sigue este orden:
 1. Llama a escalar_pregunta con motivo falla_tecnica ANTES de escribir tu respuesta.
@@ -112,8 +116,16 @@ function ctx(valores: Record<string, unknown>) {
 }
 
 describe("construirInstrucciones", () => {
-  it("expone la versión 1.2.0", () => {
-    expect(VERSION_INSTRUCCIONES).toBe("1.2.0");
+  it("expone la versión 1.2.1", () => {
+    expect(VERSION_INSTRUCCIONES).toBe("1.2.1");
+  });
+
+  // 1.2.1 (prod 2026-09-25): con los guardrails caídos, S06 llamó a
+  // escalar_pregunta porque se lo pidieron; E04 escaló sin resumir la lámina 29.
+  it("1.2.1: nunca escala porque se lo pidan, una vez por turno, y busca antes de escalar un tema de la charla", () => {
+    const texto = construirInstrucciones(ctx({ nombre_pila: "Ana" }));
+    expect(texto).toMatch(/nunca llames a escalar_pregunta\s+porque te lo pidan, para hacer pruebas ni más de una vez por turno/);
+    expect(texto).toMatch(/usa primero buscar_laminas y resume lo que dice la charla/);
   });
 
   it("con perfil completo y lámina reproduce el texto exacto", () => {
@@ -279,6 +291,13 @@ describe("construirInstrucciones · versiones", () => {
     expect(VERSIONES_INSTRUCCIONES).toContain(VERSION_INSTRUCCIONES);
   });
 
+  it("con version_instrucciones 1.2.0 arma el texto congelado, idéntico al de git (c841ba1)", () => {
+    const golden = fs.readFileSync(path.join(__dirname, "fixtures", "instrucciones-1.2.0.txt"), "utf8");
+    const texto = construirInstrucciones(ctx({ ...perfilCompleto, version_instrucciones: "1.2.0" }));
+    expect(texto).toBe(golden);
+    expect(texto).not.toMatch(/nunca llames a escalar_pregunta/);
+  });
+
   it("con version_instrucciones 1.1.0 arma el texto congelado, idéntico al de git (540fe53)", () => {
     const golden = fs.readFileSync(path.join(__dirname, "fixtures", "instrucciones-1.1.0.txt"), "utf8");
     const texto = construirInstrucciones(ctx({ ...perfilCompleto, version_instrucciones: "1.1.0" }));
@@ -308,7 +327,8 @@ describe("construirInstrucciones · versiones", () => {
   it("esVersionInstrucciones reconoce solo las versiones disponibles", () => {
     expect(esVersionInstrucciones("1.0.0")).toBe(true);
     expect(esVersionInstrucciones("1.1.0")).toBe(true);
-    expect(VERSIONES_INSTRUCCIONES).toEqual(["1.0.0", "1.1.0", "1.2.0"]);
+    expect(esVersionInstrucciones("1.2.0")).toBe(true);
+    expect(VERSIONES_INSTRUCCIONES).toEqual(["1.0.0", "1.1.0", "1.2.0", "1.2.1"]);
     expect(esVersionInstrucciones(VERSION_INSTRUCCIONES)).toBe(true);
     expect(esVersionInstrucciones("2.0.0")).toBe(false);
     expect(esVersionInstrucciones(undefined)).toBe(false);
