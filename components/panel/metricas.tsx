@@ -2,7 +2,7 @@ import { desgloseFallas, etiquetaMotivoBloqueo, latencia, modeloActual, respaldo
 import type { EstadoInterruptores, MetricasPanel } from "@/lib/panel/tipos";
 import { cn } from "@/lib/utils";
 
-// Tarjeta de una métrica: título legible desde el fondo y valor de 40 px en mono.
+// Tarjeta de una métrica: título legible desde el fondo y valor de 2,5 rem en mono.
 function Metrica({
   titulo,
   children,
@@ -21,7 +21,7 @@ function Metrica({
       className={cn("flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4", className)}
     >
       <h3 className="text-lg leading-tight text-muted-foreground">{titulo}</h3>
-      <div className="flex items-baseline gap-2 font-mono text-[40px] leading-none tabular-nums">{children}</div>
+      <div className="flex items-baseline gap-2 font-mono text-[2.5rem] leading-none tabular-nums">{children}</div>
       {detalle ? <div className="text-base text-muted-foreground">{detalle}</div> : null}
     </section>
   );
@@ -100,7 +100,7 @@ export function Metricas({ datos, valores }: { datos: MetricasPanel; valores: Es
         }
       >
         {/* Texto largo («claude-sonnet-5 · respaldo»): más chico que las cifras para que quepa. */}
-        <span data-testid="modelo-en-uso" className={cn("text-[28px] leading-tight break-words", modelo.estado && CLASE_MODELO[modelo.estado])}>
+        <span data-testid="modelo-en-uso" className={cn("text-[1.75rem] leading-tight break-words", modelo.estado && CLASE_MODELO[modelo.estado])}>
           {modelo.texto}
         </span>
       </Metrica>

@@ -25,7 +25,7 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
   });
 
   return (
-    <main className="flex h-dvh flex-col gap-4 overflow-hidden px-8 py-6">
+    <main data-proyector className="flex h-dvh flex-col gap-4 overflow-hidden px-8 py-6">
       <header className="flex items-center gap-6">
         <div className="min-w-0 flex-1">
           <p className="font-mono text-base text-muted-foreground">Charla · Inteliside</p>

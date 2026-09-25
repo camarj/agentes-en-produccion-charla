@@ -90,7 +90,7 @@ function Tarjeta({ t }: { t: TarjetaJev }) {
       className="flex shrink-0 flex-col gap-2 rounded-xl border border-border bg-card px-5 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-4 motion-safe:duration-500"
       aria-label={`Pregunta: ${t.pregunta}`}
     >
-      <p className="line-clamp-2 text-[22px] leading-snug">«{t.pregunta}»</p>
+      <p className="line-clamp-2 text-[1.375rem] leading-snug">«{t.pregunta}»</p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-lg">
         <span className="rounded-full border border-border px-3 py-0.5">{t.tema}</span>
         <span className="rounded-full border border-border px-3 py-0.5 text-muted-foreground">{t.intencion}</span>
@@ -203,7 +203,7 @@ export function SalaEnVivo() {
   const disponible = vista?.jev_disponible ?? true;
 
   return (
-    <main className="flex h-dvh flex-col gap-5 overflow-hidden px-10 py-7">
+    <main data-proyector className="flex h-dvh flex-col gap-5 overflow-hidden px-10 py-7">
       <header className="flex items-end gap-6">
         <div className="min-w-0 flex-1">
           <h1 className="text-5xl font-semibold tracking-tight">Jev · la sala en vivo</h1>
