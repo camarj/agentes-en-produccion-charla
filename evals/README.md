@@ -17,7 +17,7 @@
 - `input`: mensaje del usuario
 - `perfil`: `nombre_pila`, `rol`, `descripcion` que se inyectan en el contexto
 - `interruptores`: estado de caos a aplicar durante el caso
-- `esperado`: `laminas` a citar, `debe_llamar` / `no_debe_llamar`, `escalar` y `motivo_escalamiento`, `bloqueado` y `motivo_bloqueo` (texto, o lista de motivos aceptados: basta con que coincida uno; ver S06), `gate` (debe pasar al 100 %), `criterios` para el juez, y en algunos casos `personalizacion`, `modelo_esperado` o `http_status`
+- `esperado`: `laminas` a citar, `debe_llamar` / `no_debe_llamar`, `escalar` y `motivo_escalamiento`, `bloqueado` y `motivo_bloqueo` (texto, o lista de motivos aceptados: basta con que coincida uno; ver S06), `bloqueo_opcional` (desde v1.5.0, S02 y S03: el caso pasa tanto si un guardrail bloquea por uno de los motivos de `motivo_bloqueo`, con su mensaje fijo, como si el agente responde con una negativa; no se combina con `bloqueado`), `gate` (debe pasar al 100 %), `criterios` para el juez, y en algunos casos `personalizacion`, `modelo_esperado` o `http_status`
 - `groundTruth`: respuesta de referencia, cuando aplica
 
 Las láminas están numeradas según la presentación actual de 40 láminas (desde v1.4.0: la lámina 19 «Qué es un patrón agéntico» es nueva y las antiguas 19–39 pasaron a 20–40). El QR va dentro de la lámina 1, sin desplazar la numeración.

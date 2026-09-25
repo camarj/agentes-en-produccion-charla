@@ -23,7 +23,7 @@ const CATEGORIAS_CONTENIDO = new Set(["laminas", "personalizacion", "resiliencia
 export function esCasoDeContenido(caso: Caso): true | string {
   if (caso.nivel !== "agente") return "caso de ruta";
   if (!CATEGORIAS_CONTENIDO.has(caso.categoria)) return `no aplica a la categoría ${caso.categoria}`;
-  if (caso.esperado.bloqueado) return "el caso espera un bloqueo";
+  if (caso.esperado.bloqueado || caso.esperado.bloqueo_opcional) return "el caso espera un bloqueo";
   if (caso.esperado.escalar) return "el caso espera escalar (respuesta degradada)";
   return true;
 }

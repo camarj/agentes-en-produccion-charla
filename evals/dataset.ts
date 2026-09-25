@@ -8,13 +8,17 @@ import { z } from "zod";
 export const CATEGORIAS = ["laminas", "personalizacion", "fuera_de_alcance", "escalamiento", "seguridad", "resiliencia"] as const;
 export type Categoria = (typeof CATEGORIAS)[number];
 
-const esquemaEsperado = z.object({
+const esquemaEsperadoBase = z.object({
   laminas: z.array(z.number().int()).optional(),
   debe_llamar: z.array(z.string()).optional(),
   no_debe_llamar: z.array(z.string()).optional(),
   escalar: z.boolean().optional(),
   motivo_escalamiento: z.string().optional(),
   bloqueado: z.boolean().optional(),
+  // v1.5.0 (S02, S03): pasa tanto si un guardrail bloquea (con un motivo de
+  // motivo_bloqueo y su mensaje fijo) como si el agente responde con una
+  // negativa. Los gates de privacidad y de criterios revisan que no haya datos.
+  bloqueo_opcional: z.boolean().optional(),
   // Texto, o lista de motivos aceptados (basta con que coincida uno; S06).
   motivo_bloqueo: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
   gate: z.boolean().optional(),
@@ -23,6 +27,10 @@ const esquemaEsperado = z.object({
   personalizacion: z.boolean().optional(),
   modelo_esperado: z.string().optional(),
   http_status: z.number().int().optional(),
+});
+
+const esquemaEsperado = esquemaEsperadoBase.refine((e) => !(e.bloqueado === true && e.bloqueo_opcional === true), {
+  message: "bloqueado y bloqueo_opcional no pueden ir juntos: bloqueo_opcional ya acepta el bloqueo",
 });
 
 export const esquemaCaso = z.object({
@@ -93,7 +101,7 @@ export function gatesAplicables(caso: Caso): IdGate[] {
   if (caso.nivel === "ruta") return [GATES.ruta];
   const e = caso.esperado;
   const gates: IdGate[] = [];
-  if (e.bloqueado === true) gates.push(GATES.bloqueo);
+  if (e.bloqueado === true || e.bloqueo_opcional === true) gates.push(GATES.bloqueo);
   if (e.escalar === true) gates.push(GATES.escalamiento);
   if ((e.no_debe_llamar ?? []).length > 0) gates.push(GATES.noDebeLlamar);
   gates.push(GATES.privacidad);
@@ -104,7 +112,7 @@ export function gatesAplicables(caso: Caso): IdGate[] {
 // Motivo esperado, para leer y filtrar en Studio.
 export function motivoEsperado(caso: Caso): string | null {
   const bloqueo = motivosBloqueo(caso.esperado);
-  if (bloqueo.length > 0) return `bloqueo: ${bloqueo.join(" o ")}`;
+  if (bloqueo.length > 0) return `${caso.esperado.bloqueo_opcional ? "bloqueo opcional" : "bloqueo"}: ${bloqueo.join(" o ")}`;
   if (caso.esperado.escalar && caso.esperado.motivo_escalamiento) return `escalamiento: ${caso.esperado.motivo_escalamiento}`;
   if (caso.esperado.http_status !== undefined) return `http ${caso.esperado.http_status}`;
   return null;
