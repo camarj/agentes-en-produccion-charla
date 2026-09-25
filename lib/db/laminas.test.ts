@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { crearLaminas } from "./laminas";
+import fs from "node:fs";
+import path from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { extraerLaminas, importarLaminas } from "@/scripts/importar-laminas";
+import { consultasBusqueda, crearLaminas } from "./laminas";
 import { crearDbTemporal } from "./prueba";
 
 describe("laminas", () => {
@@ -50,5 +53,62 @@ describe("laminas", () => {
     await repo.reconstruirIndice();
     const r = await repo.buscar("guardrails");
     expect(r[0]).toMatchObject({ lamina: 9, titulo: "Guardrails v2" });
+  });
+});
+
+// Búsqueda con la presentación real (2026-09-25): las conjugaciones no
+// coincidían con el texto de las láminas («patrocinó» ↔ «patrocinada»). Orden:
+// AND exacto → AND con prefijos (palabras de contenido) → OR exacto (el de
+// siempre). Un OR con prefijos empeoraba el orden en consultas reales del agente.
+describe("laminas · presentación real", () => {
+  let db: Awaited<ReturnType<typeof crearDbTemporal>>;
+  let repo: ReturnType<typeof crearLaminas>;
+  beforeAll(async () => {
+    db = await crearDbTemporal();
+    const html = fs.readFileSync(path.join(__dirname, "..", "..", "agentes-produccion-taller-v43-before-slide14-v2.html"), "utf8");
+    await importarLaminas(db.fuente, extraerLaminas(html));
+    repo = crearLaminas(db.fuente);
+  });
+  afterAll(() => db.cerrar());
+  const numeros = async (q: string) => (await repo.buscar(q, 5)).map((r) => r.lamina);
+
+  it("«¿Quién patrocinó la charla?» encuentra la lámina 1 primero (patrocinó ↔ patrocinada)", async () => {
+    expect((await numeros("¿Quién patrocinó la charla?"))[0]).toBe(1);
+  });
+  it("«¿Quién organizó la charla?» encuentra la lámina 1 primero (organizó ↔ organizada)", async () => {
+    expect((await numeros("¿Quién organizó la charla?"))[0]).toBe(1);
+  });
+  // Evals del 2026-09-25 (L07, L12): el fragmento era un snippet de 32 palabras
+  // y cortaba la lista de la lámina («Memoria», «Condiciones de operación»…).
+  it("devuelve el contenido y las notas completos de la lámina, no un recorte", async () => {
+    const [r] = await repo.buscar("factores arquitectura", 1);
+    expect(r.lamina).toBe(18);
+    expect(r.fragmento).toContain("Memoria");
+    expect(r.fragmento).toContain("Privacidad y gobernanza");
+    expect(r.fragmento).not.toContain("…");
+    expect(r.notas).toContain("condiciones de operación");
+  });
+  it("mantiene las búsquedas exactas: router → 25, loop agéntico → 10, harness incluye 11 en el top 3", async () => {
+    expect((await numeros("router"))[0]).toBe(25);
+    expect((await numeros("loop agéntico"))[0]).toBe(10);
+    expect((await numeros("harness")).slice(0, 3)).toContain(11);
+  });
+});
+
+describe("consultasBusqueda", () => {
+  it("AND exacto, luego AND con prefijos sin palabras vacías, luego el OR exacto de siempre", () => {
+    expect(consultasBusqueda("¿Quién patrocinó la charla?")).toEqual([
+      '"quién" "patrocinó" "la" "charla"',
+      '"patroc"* "charla"',
+      '"quién" OR "patrocinó" OR "la" OR "charla"',
+    ]);
+  });
+  it("sin variantes repetidas: una palabra corta da una sola consulta", () => {
+    expect(consultasBusqueda("router")).toEqual(['"router"']);
+    expect(consultasBusqueda("harness")).toEqual(['"harness"', '"harne"*']);
+    expect(consultasBusqueda("patrocinada")).toEqual(['"patrocinada"', '"patrocin"*']);
+  });
+  it("si todo son palabras vacías, usa todas", () => {
+    expect(consultasBusqueda("¿qué es?")).toEqual(['"qué" "es"', '"qué" OR "es"']);
   });
 });
