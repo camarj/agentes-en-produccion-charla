@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { charla } from "../agents/charla";
 import { mastra } from "../index";
 import { MODELO_LIGERO } from "../modelos";
-import { crearRelevancia, crearSinErroresHerramienta, scorers } from "./index";
+import { CONTRATO_RELEVANCIA, crearRelevancia, crearSinErroresHerramienta, relevancia, scorers } from "./index";
 import { busqueda, busquedaCaida, ejecucion } from "./pruebas-ejecucion";
 
 const IDS = ["fidelidad", "relevancia", "personalizacion", "sin_errores_herramienta", "cita_lamina"];
@@ -39,6 +39,20 @@ describe("prearmados ajustados", () => {
     expect(r.id).toBe("relevancia");
     const preparado = await r.config.prepareRun!({ ...ejecucion({ pregunta: "Soy Zoraida, z@x.com", respuesta: "ok" }), requestContext: { nombre_pila: "Zoraida" } });
     expect(JSON.stringify(preparado)).not.toMatch(/Zoraida|z@x\.com/);
+  });
+
+  // Calibración del 2026-09-25: el juez prearmado penalizaba el ejemplo aplicado
+  // al trabajo de la persona, que el contrato del agente EXIGE (L09 0,44, P03 0,40).
+  it("relevancia: el juez conoce el contrato (ejemplo exigido) sin perder sus instrucciones ni volverse laxo con lo ajeno", () => {
+    for (const r of [crearRelevancia({ nombresConocidos: () => [] }), relevancia]) {
+      const instrucciones = (r.config as { judge?: { instructions?: string } }).judge?.instructions ?? "";
+      expect(instrucciones).toContain("balanced and nuanced answer relevancy evaluator");
+      expect(instrucciones.endsWith(CONTRATO_RELEVANCIA)).toBe(true);
+    }
+    expect(CONTRATO_RELEVANCIA).toMatch(/contract REQUIRES one short example/);
+    expect(CONTRATO_RELEVANCIA).toMatch(/Do not mark it "unsure" or "no" for being an example/);
+    expect(CONTRATO_RELEVANCIA).toMatch(/La charla no trata X/);
+    expect(CONTRATO_RELEVANCIA).toMatch(/still "no" or "unsure"/);
   });
 
   it("sin_errores_herramienta: 1 si todo salió bien, 0 si la búsqueda falló", async () => {

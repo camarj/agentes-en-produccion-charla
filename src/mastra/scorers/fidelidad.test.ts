@@ -77,6 +77,9 @@ describe("promptFidelidad", () => {
       expect(p).toContain("Por ejemplo, en tu agente de ecommerce");
       expect(p).toContain("como mostró Raúl, esto reduce 87 % las fallas");
       expect(p).toMatch(/still sobre_la_charla = true/);
+      // Calibración del 2026-09-25: aplicaciones en segunda persona sin «por ejemplo».
+      expect(p).toMatch(/even without "por ejemplo"/);
+      expect(p).toContain('"en tu caso…"');
     }
   });
 

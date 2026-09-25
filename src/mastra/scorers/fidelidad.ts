@@ -93,7 +93,9 @@ of the same conversation.`;
 Illustrative examples are NOT statements about the talk. The assistant is told to apply each concept
 to the user's own work or project, so answers often contain clearly illustrative examples or
 hypothetical applications, e.g. "Por ejemplo, en tu agente de ecommerce, antes de ejecutar un
-reembolso…", "Piénsalo con tu bot de WhatsApp: …", "podrías medir cuántas respuestas…". List them with
+reembolso…", "Piénsalo con tu bot de WhatsApp: …", "podrías medir cuántas respuestas…". Second-person
+hypothetical applications to the user's case ("en tu caso…", "para tu agente…", "podrías…") are
+illustrative examples even without "por ejemplo". List them with
 ejemplo_ilustrativo = true and sobre_la_charla = false: they are not checked against the excerpts and
 must not lower the score. Only the example itself is exempt. Any fact, figure, percentage, result,
 tool or quote that the answer attributes to the talk, the slides or the speaker

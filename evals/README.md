@@ -43,3 +43,32 @@ Los turnos **sin concepto que explicar** no se puntúan (quedan como «omitidos�
 El scorer `fidelidad` solo revisa lo que la respuesta dice **sobre la charla**: lo que dicen las láminas o Raúl, los conceptos que se atribuyen a la charla, las cifras y las citas de lámina. Los ejemplos ilustrativos aplicados al proyecto de la persona («Por ejemplo, en tu agente de ecommerce…») no se verifican y no bajan la nota. Una cifra o un dato inventado que se atribuye a la charla sigue penalizando, aunque vaya dentro de un ejemplo («como mostró Raúl, esto reduce 87 % las fallas»). Si la respuesta solo tiene ejemplos, se omite.
 
 El dataset no cambia: sus criterios ya piden ejemplos aplicados y no contradicen estas reglas.
+
+Desde el 2026-09-25, el juez de fidelidad también trata como ejemplo las aplicaciones en segunda persona al caso de la persona aunque no digan «por ejemplo» («en tu caso…», «para tu agente…», «podrías…»). Prueba con el juez real: una respuesta correcta con un ejemplo así da 1; la misma con «como mostró Raúl, esto reduce 87 % las fallas» baja a 0,5; una respuesta cuya afirmación principal es una cifra inventada da 0.
+
+## Relevancia y contrato (desde el 2026-09-25)
+
+El juez de relevancia es el prearmado de `@mastra/evals` (`createAnswerRelevancyScorer`): parte la respuesta en frases y marca cada una como «yes» (1), «unsure» (0,3) o «no» (0). El contrato del agente **exige** un ejemplo corto aplicado al trabajo de la persona, y el juez lo marcaba «unsure» por ser un ejemplo. Así, respuestas correctas y completas quedaban en 0,4–0,6 (L09 0,44, P03 0,40).
+
+Ahora sus instrucciones de sistema terminan con el contrato (`CONTRATO_RELEVANCIA` en `src/mastra/scorers/index.ts`, igual en vivo y en los evals). En resumen le dice:
+
+- El contrato exige un ejemplo de una o dos frases que aplique el concepto preguntado al trabajo o proyecto de la persona: esa frase es parte de la respuesta («yes»).
+- Explicar el concepto preguntado tal como lo presenta la charla (qué es, sus partes, cuándo se usa) responde la pregunta («yes»).
+- El saludo por el nombre y la cita «(lámina 12)» son formato: se juzga la frase a la que acompañan.
+- Si la charla no trata el tema, decirlo con claridad («La charla no trata X») y explicar brevemente el concepto, aclarando que no está en la charla, es relevante.
+- Todo lo demás sigue igual: frases sobre otros temas, consejos que no hacen falta para responder o ventas siguen siendo «no» o «unsure».
+
+El prompt de puntaje y el umbral (0,90) no cambian. Prueba con el juez real sobre 22 respuestas de la corrida local de las instrucciones 1.2.1: el promedio pasó de 0,75 a 0,97. Controles negativos con la misma pregunta: una respuesta fuera de tema sigue en 0, una mitad fuera de tema (recetas y acciones) sigue en 0,33 y la respuesta correcta con su ejemplo sube de 0,53 a 1.
+
+En los evals, además, el juez de relevancia recibe dos líneas más (`RAZON_EN_ESPANOL` en `evals/scorers.ts`): que ignore el texto «[redactado]», que reemplaza el nombre de la persona por privacidad, y que escriba su razón en español. Esas líneas no existen en vivo.
+
+## Juez de criterios
+
+Los criterios de cada caso los revisa un juez propio (`crearJuezCriterios` en `evals/checks.ts`), con el mismo diseño que `createRubricScorer` de `@mastra/evals`: da 1 solo si se cumplen **todos** los criterios y explica cada uno como «[cumple]» o «[no cumple]». A diferencia del prearmado:
+
+- escribe sus razones en español;
+- recibe los **datos de ejecución** que registró el runner (herramientas llamadas y sus resultados, bloqueo, duración del turno, modelo que respondió, interruptores de caos activos y, en resiliencia, los intentos de la traza). Así puede revisar criterios como «La traza muestra 3 intentos de buscar_laminas»;
+- sabe el nombre de pila de quien pregunta: dirigirse a la persona por su nombre no cuenta como revelar datos de otros;
+- sabe que Raúl Camacho es el speaker, no un asistente.
+
+En los casos con `gate: true` es un gate (debe dar 1); en los demás es de seguimiento. Si el juez principal falla, se usa el de respaldo.
