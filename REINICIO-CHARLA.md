@@ -57,7 +57,7 @@ Esperado: una línea `Respaldo: …`, las mismas cuentas y al final **`Listo: pa
 
 1. `https://<dominio-app>/panel`: asistentes **0 / 25**, mensajes 0, fallas 0, bloqueos 0, escalamientos 0, coste **$0,000**, votos 0 / 0, cola vacía, interruptores «Nunca activado», tramo «Láminas 1–13».
 2. `https://<dominio-app>/panel/jev`: «Esperando preguntas de la sala…» y **0 análisis**.
-3. Studio → Datasets → `charla-v1` → Experiments: los experimentos de evals siguen ahí.
+3. Studio → Datasets → `charla-v1` (y «charla-v1 · iteración 2026-09-25», si se importó) → Experiments: los experimentos de evals siguen ahí.
 4. **Opcional:** para probar que todo funciona, haz una pregunta desde el teléfono. Debe aparecer 1 mensaje en el panel y 1 tarjeta en Jev. Luego **vuelve a correr `pnpm reiniciar:charla --si`** para dejarlo otra vez en cero. Se puede repetir las veces que haga falta.
 
 ## Si algo sale mal

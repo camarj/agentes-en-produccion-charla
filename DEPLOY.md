@@ -122,7 +122,26 @@ pnpm evals -- --instrucciones 1.1.0          # versión anterior, mismo dataset 
 - Si R04 falla por falta de build de Next en el contenedor, repite con `--ruta proceso`.
 - **Veredicto esperado:** puede salir `failed`. La última corrida de producción del 2026-09-25 dio 32/40 con un solo gate en rojo (`gate_bloqueo`, por el tope del clasificador de alcance, que luego subió de 3 s a 5 s); el resultado vigente está en `.claude/sessions/ITERACION-EVALS.md`. **La demo muestra el veredicto tal como salga, aunque sea `failed`** (PRD §11). No es un bloqueo para desplegar ni para `v1-estable`. No ajustes instrucciones, umbrales ni guardrails para que pase. Reporta el resumen de consola a Raúl.
 - Solo la corrida final de cada paso va a producción: no repitas corridas para «mejorar» el número.
-- Verifica en Studio → **Datasets** → `charla-v1` → **Experiments**: deben aparecer las corridas de la iteración (27/40 → 28 → 32 → 32, y las posteriores); marca dos y usa **Compare**. Guion de la demo en `.claude/sessions/T13.md` («Guion para la demo»).
+- Verifica en Studio → **Datasets** → `charla-v1` → **Experiments** que aparezcan tus corridas; marca dos y usa **Compare**. Las cinco corridas de la iteración del 2026-09-25 (27/40 → 28 → 32 → 32 → 35) **no** están ahí: se hicieron en la máquina de Raúl y se importan con §6.1 a un dataset aparte. Guion de la demo en `.claude/sessions/T13.md` («Guion para la demo»).
+
+### 6.1 Importar los experimentos de la iteración 2026-09-25
+
+Los cinco experimentos de la iteración se crearon con `pnpm evals` en local, así que viven en el `data/mastra.db` de Raúl, no en el del servidor. El repo trae un paquete con ellos (`evals/experimentos/iteracion-2026-09-25.json`, sin datos personales: solo casos y perfiles inventados de los evals). Se importan como un dataset **nuevo**, «charla-v1 · iteración 2026-09-25» (id `charla-v1-iteracion-2026-09-25`), así que el `charla-v1` del servidor y sus experimentos no se tocan ni se mezclan.
+
+En la Terminal del contenedor **`studio`** o **`web`** (comparten el volumen `/app/data`):
+
+```bash
+pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json        # simulación: no escribe nada
+pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json --si   # aplica
+```
+
+- **Simulación esperada:** «El dataset no existe en el destino: se crea.» y, por tabla, nuevas = paquete y **conflictos 0**: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200.
+- **Con `--si`:** primero copia la base a `/app/data/mastra.respaldo-<fecha>.db` y luego inserta todo en una sola escritura. Al final muestra «En el destino ahora: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200, datasetsTotales 2» (o más, si hay otros datasets).
+- Es **idempotente**: repetirlo no duplica nada («No faltaba nada: no se escribió nada»).
+- Si la simulación muestra **conflictos mayores que 0**, no apliques (el script igual se niega) y avisa a Raúl: significa que esos ids ya existen en otro dataset del servidor.
+- **Verificar en Studio:** Datasets → «charla-v1 · iteración 2026-09-25» → **Experiments**: 5 corridas (de «charla-v1.4.0 · instrucciones 1.1.0 · 2026-09-25 13:02» a «charla-v1.5.0 · instrucciones 1.2.1 · 2026-09-25 14:32»). Marca dos (por ejemplo, la primera y la última) y usa **Compare**: 40 casos con sus puntajes. Studio lee la base en cada consulta: basta con recargar la página. Reinicia el servicio `studio` solo si aun así no aparecen.
+- Las trazas de esos experimentos están en Neon solo si la corrida local tenía `OBSERVABILIDAD_DATABASE_URL`; si un caso no abre su traza, es por eso y no afecta a los puntajes.
+- **Deshacer** (solo si Raúl lo pide): detén `studio` y `web`, reemplaza `/app/data/mastra.db` por el respaldo y borra `/app/data/mastra.db-wal` y `-shm`, y vuelve a arrancar.
 
 ---
 
@@ -155,7 +174,7 @@ Después de la carga, en `/panel` los mensajes de carga cuentan en las métricas
 - [ ] El teclado del teléfono no tapa el cuadro de texto del chat.
 - [ ] Studio solo con contraseña.
 - [ ] 40 láminas (con notas) y 25 inscritos importados; el xlsx borrado del volumen.
-- [ ] Experimentos de la iteración de evals visibles en Studio con Compare; veredicto reportado aunque sea `failed`.
+- [ ] Experimentos de la iteración 2026-09-25 importados (§6.1) y visibles en Studio con Compare; veredicto reportado aunque sea `failed`.
 - [ ] Prueba de carga: números reportados, asistentes de prueba borrados.
 - [ ] `v1-estable` etiquetado y rollback probado.
 
