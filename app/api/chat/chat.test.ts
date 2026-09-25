@@ -341,7 +341,7 @@ describe("POST /api/chat: turno", () => {
     expect(rc.get("rol_anonimo")).toBe("negocio");
     expect(rc.get("lamina_actual")).toBe(12);
     expect(rc.get("interruptores_activos")).toEqual(["latencia_alta"]);
-    expect(rc.get("version_instrucciones")).toBe("1.1.0");
+    expect(rc.get("version_instrucciones")).toBe("1.2.0");
     // La pregunta vieja del cuerpo no llega al modelo: el historial es de la memoria.
     expect(JSON.stringify(falso.llamadas[0].prompt)).not.toContain("pregunta vieja");
   });
