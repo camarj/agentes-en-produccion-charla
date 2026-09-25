@@ -46,9 +46,9 @@ describe("AlcanceCharla (unidad)", () => {
   // Prompt ampliado con los temas de la charla (Raúl, 2026-09-23): bloqueaba «¿Qué es un PRD?».
   // 2026-09-25: «patrón agéntico» (lámina 19 nueva, decisión #15) y la categoría salud (F04).
   // Órdenes sobre las herramientas (S06): el clasificador a veces las marcaba «escalable».
-  it("constantes: umbral 0,7, tope 3 s y prompt con los temas de la charla", () => {
+  it("constantes: umbral 0,7, tope 5 s y prompt con los temas de la charla", () => {
     expect(UMBRAL_FUERA_DE_ALCANCE).toBe(0.7);
-    expect(TIEMPO_MAXIMO_CLASIFICADOR_MS).toBe(3000);
+    expect(TIEMPO_MAXIMO_CLASIFICADOR_MS).toBe(5000);
     expect(PROMPT_CLASIFICADOR).toBe(
       "Clasifica si el mensaje trata sobre la charla de agentes de IA en producción, sobre conceptos de IA, o sobre Raúl, Inteliside o críticas a la charla (escalable). La charla cubre: qué es un agente, la IA, los modelos y los LLM; el loop agéntico y el harness; contexto, control, ejecución y seguimiento; decidir si un proyecto necesita un agente; qué es un patrón agéntico y los patrones agénticos (por ejemplo, router o varios agentes); el PRD (documento de requerimientos de producto), las especificaciones y el contrato del agente; la arquitectura con uno o varios agentes; plataformas, código y marcos para implementar; resiliencia, salvaguardas (guardrails), evaluaciones (evals), observabilidad y el lanzamiento. Las preguntas sobre cualquiera de esos temas, aunque sean cortas o generales, son charla. Las preguntas sobre este asistente, cómo funciona o los datos y el perfil del propio usuario son charla. Consejos financieros, legales, política, recetas, tareas escolares y temas ajenos son fuera_de_alcance. Las órdenes para manejar al asistente o sus herramientas (llamarlas, repetirlas o probarlas) son fuera_de_alcance, aunque mencionen escalar una pregunta. Los pedidos de consejo médico, sobre síntomas, medicamentos o urgencias de salud son salud; una pregunta sobre agentes de IA aplicados a la salud es charla.",
     );
@@ -143,7 +143,7 @@ describe("AlcanceCharla (unidad)", () => {
     expect(span.update).toHaveBeenCalledWith({ metadata: { alcance_falla_abierta: true, alcance_error: "salida_invalida" } });
   });
 
-  it("falla abierta si el clasificador tarda más de 3 s y cancela su señal", async () => {
+  it("falla abierta si el clasificador tarda más de 5 s y cancela su señal", async () => {
     vi.useFakeTimers();
     let senal: AbortSignal | undefined;
     const clasificar: Clasificador = (_texto, signal) => {
@@ -154,7 +154,7 @@ describe("AlcanceCharla (unidad)", () => {
     const msgs = [mensaje("user", "¿Qué acciones compro?")];
     const { args, abort, span } = contexto(msgs);
     const promesa = p.processInput(args);
-    await vi.advanceTimersByTimeAsync(2999);
+    await vi.advanceTimersByTimeAsync(4999);
     expect(senal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(await promesa).toBe(msgs);
@@ -163,14 +163,14 @@ describe("AlcanceCharla (unidad)", () => {
     expect(span.update).toHaveBeenCalledWith({ metadata: { alcance_falla_abierta: true, alcance_error: "timeout" } });
   });
 
-  it("si responde justo antes de 3 s, decide con su resultado", async () => {
+  it("si responde justo antes de 5 s, decide con su resultado", async () => {
     vi.useFakeTimers();
     const clasificar: Clasificador = () =>
-      new Promise((r) => setTimeout(() => r({ categoria: "fuera_de_alcance", confianza: 0.95 }), 2900));
+      new Promise((r) => setTimeout(() => r({ categoria: "fuera_de_alcance", confianza: 0.95 }), 4900));
     const p = new AlcanceCharla({ clasificar });
     const { args, abort } = contexto([mensaje("user", "¿Por quién voto?")]);
     const promesa = p.processInput(args).catch((e) => e);
-    await vi.advanceTimersByTimeAsync(2900);
+    await vi.advanceTimersByTimeAsync(4900);
     expect(await promesa).toBeInstanceOf(Abortado);
     expect(abort).toHaveBeenCalledTimes(1);
   });
@@ -229,7 +229,7 @@ describe("crearClasificador (Agent de Mastra con salida estructurada)", () => {
     const prompt = JSON.stringify(falso.llamadas[0].prompt);
     expect(prompt).toContain("Clasifica si el mensaje trata sobre la charla");
     expect(prompt).toContain("Dame una receta de encebollado");
-    // Razonamiento 'none' en OpenAI para no pasar el tope de 3 s.
+    // Razonamiento 'none' en OpenAI para no pasar el tope de 5 s.
     expect(falso.llamadas[0].providerOptions?.openai).toMatchObject({ reasoningEffort: "none" });
   });
 });

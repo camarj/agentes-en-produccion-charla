@@ -9,7 +9,7 @@ import { registrarEnTraza } from "./traza-guardrail";
 
 // Modelos del clasificador: el ligero (OpenAI) y, si falla, el ligero de
 // respaldo (Anthropic), con el fallback nativo del Agent de Mastra. Sin
-// reintentos: el tope de 3 s cubre toda la cadena y, si se agota, alcance
+// reintentos: el tope de 5 s cubre toda la cadena y, si se agota, alcance
 // deja pasar (falla abierta).
 export function modelosGuardrail(): ModelWithRetries[] {
   return [
@@ -18,7 +18,7 @@ export function modelosGuardrail(): ModelWithRetries[] {
   ];
 }
 export const UMBRAL_FUERA_DE_ALCANCE = 0.7;
-export const TIEMPO_MAXIMO_CLASIFICADOR_MS = 3000;
+export const TIEMPO_MAXIMO_CLASIFICADOR_MS = 5000;
 
 // Texto de la tarea T06 más una frase (decisión de Raúl, 2026-09-23, caso S04):
 // preguntar por el asistente, cómo funciona o el perfil propio no es fuera de
@@ -67,7 +67,7 @@ export function crearClasificador(
     const r = await agente.generate(mensaje, {
       structuredOutput: { schema: esquemaClasificacion },
       modelSettings: { temperature: 0 },
-      // Sin razonamiento en OpenAI para quedar bajo el tope de 3 s.
+      // Sin razonamiento en OpenAI para quedar bajo el tope de 5 s.
       providerOptions: { openai: { ...OPCIONES_PROVEEDOR_LIGERO.openai } },
       abortSignal: signal,
       ...(contexto.tracingContext ? { tracingContext: contexto.tracingContext } : {}),
@@ -106,7 +106,7 @@ type ResultadoClasificacion = { ok: true; valor: Clasificacion } | { ok: false; 
 
 // Guardrail de alcance. Clasifica el último mensaje del usuario y solo bloquea
 // `fuera_de_alcance` con confianza ≥ umbral. Si el clasificador falla, tarda
-// más de 3 s o devuelve algo inválido, deja pasar (falla abierta).
+// más de 5 s o devuelve algo inválido, deja pasar (falla abierta).
 export class AlcanceCharla implements Processor<"alcance-charla"> {
   readonly id = "alcance-charla" as const;
   readonly name = "Alcance de la charla";
