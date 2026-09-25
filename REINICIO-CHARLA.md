@@ -72,7 +72,7 @@ Esperado: una línea `Respaldo: …`, las mismas cuentas y al final **`Listo: pa
 Se hizo un simulacro completo en local con copias de las bases y un Postgres temporal:
 
 1. Actividad real: 3 asistentes, una pregunta normal, un intento de inyección bloqueado, una pregunta comercial escalada, votos, interruptores y análisis de Jev. Además, una corrida de evals con 2 casos.
-2. Reinicio: el panel y Jev quedaron en cero. Se conservaron los 25 inscritos, las 39 láminas y su búsqueda, el experimento, las 2 trazas de evals con sus 4 jueces y los hilos `eval-*`.
+2. Reinicio: el panel y Jev quedaron en cero. Se conservaron los 25 inscritos, las 40 láminas y su búsqueda, el experimento, las 2 trazas de evals con sus 4 jueces y los hilos `eval-*`.
 3. Después del reinicio: asistentes nuevos chatearon, votaron y aparecieron en el panel y en Jev con normalidad. Una sesión abierta antes del reinicio quedó cerrada y el chat la rechazó con 401, como se esperaba.
 4. Segunda corrida seguida: no encontró nada que borrar y no rompió nada.
 5. El respaldo contenía los datos previos.

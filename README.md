@@ -33,7 +33,7 @@ Cada idea de la charla tiene algo concreto en el demo que se puede señalar en l
 | Elige un patrón y un marco con *harness* | 19–32 | Es **un solo agente con herramientas** (patrón ReAct), construido con [Mastra](https://mastra.ai), que ya trae memoria, trazas y evaluaciones | `src/mastra/` |
 | Resiliencia | 33 | Si la búsqueda en las láminas falla, reintenta y luego escala. Si el modelo principal cae, responde el de respaldo. Si caen los dos, muestra un aviso amable. Y hay un botón para pausar todo | Panel del speaker → interruptores de caos |
 | Salvaguardas | 34 | Cada pregunta pasa por detectores de inyección y de temas fuera de la charla, que la cortan si hace falta. Las respuestas nunca muestran emails ni datos de otros asistentes | Panel → «Bloqueos de guardrails» |
-| ¿Lo hizo bien? (evals) | 35 | Un dataset de **40 casos**, uno por cada línea del contrato y cada salvaguarda. Mientras dura la charla, además, unos jueces automáticos califican las respuestas reales | Mastra Studio → Datasets / Experiments |
+| ¿Lo hizo bien? (evals) | 35 | Un dataset de **40 casos**, uno por cada línea del contrato y cada salvaguarda. El veredicto se muestra **tal como sale, aunque sea `failed`**: en Studio se ve cómo el agente mejoró al iterar (de 27/40 a 32/40 el día antes de la charla) sin bajar la vara. Mientras dura la charla, además, unos jueces automáticos califican las respuestas reales | Mastra Studio → Datasets / Experiments |
 | ¿Qué ocurrió y por qué? (observabilidad) | 36 | Cada pregunta deja una **traza** con el modelo, las herramientas que usó, la latencia, el coste y los bloqueos | Mastra Studio → Traces |
 | Antes, durante y después | 37 | Antes, las evals. Durante, métricas en vivo y la pantalla **Jev**, que lee lo que pregunta la sala. Después, el plan del PRD es convertir las respuestas con voto negativo en casos nuevos del dataset | Panel y `/panel/jev` |
 
@@ -139,7 +139,7 @@ La lista completa para producción está en [DEPLOY.md §3](DEPLOY.md#3-variable
 | `pnpm dev` | Arranca la app en `http://localhost:3000` |
 | `pnpm mastra:studio` | Arranca Mastra Studio en `http://localhost:4111` |
 | `pnpm test` | Corre las pruebas automáticas (más de 900) |
-| `pnpm evals` | Corre el dataset de 40 casos contra el agente. Falla si no pasa los mínimos. Detalle en [evals/README.md](evals/README.md) |
+| `pnpm evals` | Corre el dataset de 40 casos contra el agente y da un veredicto (`passed` o `failed`); sale con error si no pasa los mínimos. Detalle en [evals/README.md](evals/README.md) |
 | `pnpm reiniciar:charla` | Deja el panel y Jev en cero antes de la charla, sin borrar inscritos, láminas ni evals. Ver [REINICIO-CHARLA.md](REINICIO-CHARLA.md) |
 | `pnpm purgar:personales` | **Después** de la charla: borra todos los datos personales |
 
@@ -151,7 +151,7 @@ Así se pasó de la idea al agente en producción, en el mismo orden que enseña
 
 | Documento | Qué contiene |
 | --- | --- |
-| [PRD del agente demo](<PRD · Agente demo «Cómo lograr que tus agentes sobrevivan a producción».md>) | **El punto de partida.** Problema, usuarios, objetivos, decisión «agente o workflow», requerimientos, **contrato de comportamiento** (§9), resiliencia y salvaguardas (§10), evals y observabilidad (§11) y el guion de la demo (§12) |
+| [PRD del agente demo](<PRD · Agente demo «Cómo lograr que tus agentes sobrevivan a producción».md>) | **El punto de partida** (versión 2.0, al día). Problema, usuarios, objetivos, decisión «agente o workflow», requerimientos, **contrato de comportamiento** (§9), resiliencia y salvaguardas (§10), evals y observabilidad (§11), el guion de la demo (§12) y el **registro de cambios de requisitos** (§15): qué cambió durante la implementación y por qué |
 | [Tareas de implementación T01–T14](.claude/tasks/) | Los requerimientos del PRD convertidos en 14 tareas pequeñas, cada una con su checklist. Van de la base de datos (T02) al agente (T05), los guardrails (T06), las evals (T13) y el despliegue (T14) |
 | [Notas de cada tarea](.claude/sessions/) | Qué se hizo en cada tarea y en qué se desvió del plan, con el motivo |
 | [Dataset de evals](evals/README.md) | Los 40 casos, cómo se califican y cómo leer los resultados |

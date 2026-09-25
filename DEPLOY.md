@@ -5,7 +5,8 @@ Handoff para el agente que despliega. Todo lo que hay que hacer está aquí; si 
 - **Repo:** https://github.com/camarj/agentes-en-produccion-charla (rama `main`, público)
 - **Servidor:** Dokploy de Inteliside, **EE. UU.** (misma región aproximada que Neon, `us-east-2`)
 - **Qué se despliega:** una sola imagen (`Dockerfile` en la raíz) usada por **dos servicios**: `web` (la app de los asistentes + panel del speaker) y `studio` (Mastra Studio + API de Mastra).
-- **Cuándo:** hoy. La charla es en ~2 días; tras desplegar se corren los evals en producción y sus resultados **se quedan** para la demo.
+- **Cuándo:** la charla es el sábado 2026-09-26. Tras desplegar se corren los evals en producción y sus resultados **se quedan** para la demo.
+- **Dominios en uso:** app `charla.codetrain.cloud`, Studio `studio-charla.codetrain.cloud`.
 
 ---
 
@@ -102,6 +103,8 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
    rm /app/data/inscritos.xlsx   # no dejes el archivo con datos personales en el volumen
    ```
    Si Raúl tiene una versión más nueva de la presentación, debe subirla al repo y redesplegar antes de importar.
+
+   **Notas del speaker:** desde el commit `540fe53` las notas se leen de la lista JSON del HTML. Si el despliegue anterior era previo a `540fe53`, después de desplegar `540fe53` o posterior **vuelve a correr `pnpm importar:laminas …`** (esperado: 40 láminas, 30 con notas). El cambio de la búsqueda del 2026-09-25 (lámina completa y prefijos, `303a333`) es del lado de la consulta: **no** exige reimportar.
 5. **Prueba funcional con un email inscrito** (pídele a Raúl uno de ejemplo, o usa el suyo si está inscrito): entrar, ver «Hola, <nombre>.», hacer una pregunta, ver la respuesta con la etiqueta de lámina, votar 👍. En Studio → Observability → Traces aparece la traza y su pestaña **Feedback** muestra el voto. En `/panel` suben «Mensajes» y «Votos».
 
 ---
@@ -111,14 +114,15 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 En el contenedor **`studio`** (Terminal). Cada corrida: ~3–4 min, ~0,20 USD.
 
 ```bash
-pnpm evals                                   # instrucciones actuales 1.1.0
-pnpm evals -- --instrucciones 1.0.0          # versión anterior, mismo dataset (para Compare)
+pnpm evals                                   # instrucciones vigentes 1.2.1, dataset 1.5.0
+pnpm evals -- --instrucciones 1.1.0          # versión anterior, mismo dataset (para Compare)
 ```
 
 - Ambos usan una `charla.db` **temporal** propia: no tocan asistentes, interruptores, cola ni gasto reales. Sus trazas llevan `origen: eval` y el panel no las cuenta.
 - Si R04 falla por falta de build de Next en el contenedor, repite con `--ruta proceso`.
-- **Se espera `failed`** (en local salió 24/40): es material para la demo, no un bloqueo. No ajustes nada para que pase. Reporta el resumen de consola de ambas corridas a Raúl.
-- Verifica en Studio → **Datasets** → `charla-v1` → **Experiments**: deben aparecer las dos corridas; marca ambas y usa **Compare**. Guion de la demo en `.claude/sessions/T13.md` («Guion para la demo»).
+- **Veredicto esperado:** puede salir `failed`. La última corrida de producción del 2026-09-25 dio 32/40 con un solo gate en rojo (`gate_bloqueo`, por el tope del clasificador de alcance, que luego subió de 3 s a 5 s); el resultado vigente está en `.claude/sessions/ITERACION-EVALS.md`. **La demo muestra el veredicto tal como salga, aunque sea `failed`** (PRD §11). No es un bloqueo para desplegar ni para `v1-estable`. No ajustes instrucciones, umbrales ni guardrails para que pase. Reporta el resumen de consola a Raúl.
+- Solo la corrida final de cada paso va a producción: no repitas corridas para «mejorar» el número.
+- Verifica en Studio → **Datasets** → `charla-v1` → **Experiments**: deben aparecer las corridas de la iteración (27/40 → 28 → 32 → 32, y las posteriores); marca dos y usa **Compare**. Guion de la demo en `.claude/sessions/T13.md` («Guion para la demo»).
 
 ---
 
@@ -138,7 +142,7 @@ Después de la carga, en `/panel` los mensajes de carga cuentan en las métricas
 
 ## 8. Versión estable y rollback
 
-1. Si todo lo anterior funciona, marca el despliegue actual como estable: crea el tag git `v1-estable` en el commit desplegado (`git tag v1-estable <sha> && git push origin v1-estable`) y anota el ID del despliegue en Dokploy.
+1. Si todo lo anterior funciona (app, Studio, importación y carga), marca el despliegue actual como estable. **No depende del veredicto de los evals**: un `failed` se reporta y se muestra en la demo, pero no impide etiquetar (decisión de Raúl, 2026-09-25): crea el tag git `v1-estable` en el commit desplegado (`git tag v1-estable <sha> && git push origin v1-estable`) y anota el ID del despliegue en Dokploy.
 2. **Prueba el rollback una vez:** en Dokploy → `web` → Deployments, vuelve al despliegue estable (o redespliega apuntando al tag `v1-estable`) y confirma que la app responde y los datos siguen (el volumen no se toca).
 3. Reinicia `web` una vez y confirma que conversaciones, trazas y escalamientos se conservan.
 
@@ -150,8 +154,8 @@ Después de la carga, en `/panel` los mensajes de carga cuentan en las métricas
 - [ ] Android: aparece «Instalar app» y se instala. iPhone (Safari): aparece la indicación «Agregar a inicio» y la app abre a pantalla completa (puede pedir el email otra vez: es normal).
 - [ ] El teclado del teléfono no tapa el cuadro de texto del chat.
 - [ ] Studio solo con contraseña.
-- [ ] 40 láminas y 25 inscritos importados; el xlsx borrado del volumen.
-- [ ] Dos experimentos de evals visibles en Studio con Compare.
+- [ ] 40 láminas (con notas) y 25 inscritos importados; el xlsx borrado del volumen.
+- [ ] Experimentos de la iteración de evals visibles en Studio con Compare; veredicto reportado aunque sea `failed`.
 - [ ] Prueba de carga: números reportados, asistentes de prueba borrados.
 - [ ] `v1-estable` etiquetado y rollback probado.
 
