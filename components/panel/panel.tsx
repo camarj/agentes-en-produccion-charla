@@ -25,11 +25,11 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
   });
 
   return (
-    <main data-proyector className="flex h-dvh flex-col gap-4 overflow-hidden px-8 py-6">
+    <main data-proyector className="flex h-dvh flex-col gap-3 overflow-hidden px-8 py-4">
       <header className="flex items-center gap-6">
         <div className="min-w-0 flex-1">
           <p className="font-mono text-base text-muted-foreground">Charla · Inteliside</p>
-          <h1 className="text-3xl font-semibold">Panel del speaker</h1>
+          <h1 className="text-2xl font-semibold">Panel del speaker</h1>
         </div>
         <p role="status" className={cn("font-mono text-base", sinConexion ? "text-red-300" : "text-muted-foreground")}>
           {sinConexion
@@ -77,10 +77,10 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
       )}
 
       {/* Tres columnas para que la pausa y los 4 interruptores quepan en 1080p sin desplazarse. */}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,6fr)] gap-4">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,6fr)] gap-3">
         {interruptores ? (
           <>
-            <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+            <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
               <SelectorTramo
                 valor={interruptores.valores.lamina_actual}
                 onCambiar={(n) => void cambiarInterruptor("lamina_actual", n)}

@@ -12,7 +12,7 @@ export function SelectorTramo({ valor, onCambiar }: { valor: number; onCambiar: 
   const actual = tramoDeLamina(valor);
 
   return (
-    <section aria-labelledby="titulo-tramo" className="rounded-xl border border-border bg-card p-5">
+    <section aria-labelledby="titulo-tramo" className="rounded-xl border border-border bg-card p-4">
       <h2 id="titulo-tramo" className="text-xl font-medium">
         Tramo de la presentación
       </h2>
@@ -25,7 +25,7 @@ export function SelectorTramo({ valor, onCambiar }: { valor: number; onCambiar: 
               type="button"
               aria-pressed={elegido}
               className={cn(
-                "flex h-14 items-center rounded-xl border px-4 text-left text-xl font-medium",
+                "flex h-11 items-center rounded-xl border px-4 text-left text-xl font-medium",
                 elegido
                   ? "border-foreground bg-foreground text-background"
                   : "border-border bg-background text-foreground hover:bg-muted",
@@ -40,7 +40,7 @@ export function SelectorTramo({ valor, onCambiar }: { valor: number; onCambiar: 
           );
         })}
       </div>
-      <h3 id="titulo-preguntas" className="mt-4 text-base text-muted-foreground">
+      <h3 id="titulo-preguntas" className="mt-3 text-base text-muted-foreground">
         Preguntas sugeridas ahora
       </h3>
       <ul aria-labelledby="titulo-preguntas" className="mt-1 flex flex-col gap-1 text-base leading-snug">

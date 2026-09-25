@@ -106,8 +106,8 @@
   }
   /* Pantallas para proyectar (panel y Jev), diseñadas a 1920 × 1080: todo va en
      rem, así que escalar la fuente raíz achica la página entera en proporción.
-     En una MacBook Air (≈1470 × 830 útiles) se ve igual que en 1080p. */
+     En una MacBook Air (≈1470 × 830 útiles) queda en ~14 px. */
   html:has([data-proyector]) {
-    font-size: clamp(10px, min(100vw / 120, 100vh / 67.5), 16px);
+    font-size: clamp(12px, min(100vw / 105, 100vh / 58), 16px);
   }
 }

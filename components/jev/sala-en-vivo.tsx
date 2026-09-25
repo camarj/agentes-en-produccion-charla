@@ -87,15 +87,15 @@ function Tarjeta({ t }: { t: TarjetaJev }) {
   const emoji = emojiConfusion(t.confusion);
   return (
     <li
-      className="flex shrink-0 flex-col gap-2 rounded-xl border border-border bg-card px-5 py-3 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-4 motion-safe:duration-500"
+      className="flex shrink-0 flex-col gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-4 motion-safe:duration-500"
       aria-label={`Pregunta: ${t.pregunta}`}
     >
       <p className="line-clamp-2 text-[1.375rem] leading-snug">«{t.pregunta}»</p>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-lg">
-        <span className="rounded-full border border-border px-3 py-0.5">{t.tema}</span>
-        <span className="rounded-full border border-border px-3 py-0.5 text-muted-foreground">{t.intencion}</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-base">
+        <span className="rounded-full border border-border px-2.5 py-px">{t.tema}</span>
+        <span className="rounded-full border border-border px-2.5 py-px text-muted-foreground">{t.intencion}</span>
         {emoji ? (
-          <span className="text-2xl leading-none" role="img" aria-label={`Confusión ${porcentaje(t.confusion!)}`}>
+          <span className="text-xl leading-none" role="img" aria-label={`Confusión ${porcentaje(t.confusion!)}`}>
             {emoji}
           </span>
         ) : null}
@@ -114,8 +114,8 @@ function Tarjeta({ t }: { t: TarjetaJev }) {
 
 function Seccion({ titulo, detalle, children, className }: { titulo: string; detalle?: string; children: React.ReactNode; className?: string }) {
   return (
-    <section aria-label={titulo} className={cn("flex min-h-0 flex-col gap-3 rounded-xl border border-border bg-card px-6 py-5", className)}>
-      <h2 className="flex items-baseline gap-3 text-2xl font-semibold">
+    <section aria-label={titulo} className={cn("flex min-h-0 flex-col gap-2.5 rounded-xl border border-border bg-card px-5 py-4", className)}>
+      <h2 className="flex items-baseline gap-3 text-xl font-semibold">
         {titulo}
         {detalle ? <span className="text-base font-normal text-muted-foreground">{detalle}</span> : null}
       </h2>
@@ -128,11 +128,11 @@ function Temas({ temas }: { temas: VistaJev["temas"] }) {
   const max = Math.max(1, ...temas.map((t) => t.turnos));
   if (temas.length === 0) return <p className="text-lg text-muted-foreground">Todavía sin preguntas en esta ventana.</p>;
   return (
-    <ul className="flex flex-col gap-2 overflow-hidden">
+    <ul className="flex flex-col gap-1.5 overflow-hidden">
       {temas.slice(0, 7).map((t) => (
-        <li key={t.tema} className="grid grid-cols-[14rem_1fr_3rem] items-center gap-3 text-lg">
+        <li key={t.tema} className="grid grid-cols-[12rem_1fr_2.5rem] items-center gap-3 text-base">
           <span className="truncate">{t.tema}</span>
-          <span className="h-5 overflow-hidden rounded-sm bg-white/5">
+          <span className="h-4 overflow-hidden rounded-sm bg-white/5">
             <span
               className="block h-full rounded-sm bg-white/80 transition-[width] duration-700 motion-reduce:transition-none"
               style={{ width: `${(t.turnos / max) * 100}%` }}
@@ -152,7 +152,7 @@ function Termometro({ t }: { t: VistaJev["termometro"] }) {
   const largo = Math.PI * 80;
   return (
     <div className="flex items-center gap-8">
-      <svg viewBox="0 0 200 110" className={cn("h-32 w-56 shrink-0", color)} role="img" aria-label={p === null ? "Sin datos" : `Confusión ${p} %`}>
+      <svg viewBox="0 0 200 110" className={cn("h-24 w-44 shrink-0", color)} role="img" aria-label={p === null ? "Sin datos" : `Confusión ${p} %`}>
         <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="18" strokeLinecap="round" />
         <path
           d="M20 100 A80 80 0 0 1 180 100"
@@ -168,7 +168,7 @@ function Termometro({ t }: { t: VistaJev["termometro"] }) {
           {p === null ? "—" : `${p}%`}
         </text>
       </svg>
-      <div className="flex flex-col gap-2 text-lg">
+      <div className="flex flex-col gap-1.5 text-base">
         <p className="text-muted-foreground">Promedio de las últimas {t.turnos} preguntas</p>
         <p>
           Lo que más confunde: <strong className="font-semibold">{t.mas_confunde ?? "—"}</strong>
@@ -181,13 +181,13 @@ function Termometro({ t }: { t: VistaJev["termometro"] }) {
 function Destacadas({ d }: { d: VistaJev["destacadas"] }) {
   if (d.length === 0) return <p className="text-lg text-muted-foreground">Aún no hay preguntas para destacar.</p>;
   return (
-    <ol className="flex flex-col gap-3">
+    <ol className="flex flex-col gap-2">
       {d.map((x, i) => (
         <li key={x.traceId} className="flex gap-3 text-lg">
           <span className="font-mono text-muted-foreground">{i + 1}.</span>
           <div className="min-w-0">
-            <p className="line-clamp-2 text-xl">«{x.pregunta}»</p>
-            <p className="text-base text-muted-foreground">
+            <p className="line-clamp-2 text-lg">«{x.pregunta}»</p>
+            <p className="text-sm text-muted-foreground">
               {x.tema}
               {x.parecidas > 0 ? ` · ${x.parecidas} ${x.parecidas === 1 ? "pregunta parecida" : "preguntas parecidas"}` : ""}
             </p>
@@ -203,11 +203,11 @@ export function SalaEnVivo() {
   const disponible = vista?.jev_disponible ?? true;
 
   return (
-    <main data-proyector className="flex h-dvh flex-col gap-5 overflow-hidden px-10 py-7">
+    <main data-proyector className="flex h-dvh flex-col gap-4 overflow-hidden px-8 py-5">
       <header className="flex items-end gap-6">
         <div className="min-w-0 flex-1">
-          <h1 className="text-5xl font-semibold tracking-tight">Jev · la sala en vivo</h1>
-          <p className="mt-2 font-mono text-lg text-muted-foreground">
+          <h1 className="text-4xl font-semibold tracking-tight">Jev · la sala en vivo</h1>
+          <p className="mt-1 font-mono text-base text-muted-foreground">
             System One · TypeSafe · {vista?.total_analisis ?? 0} análisis · latencia media{" "}
             {vista?.latencia_media_ms != null ? `${vista.latencia_media_ms} ms` : "—"}
           </p>
@@ -217,10 +217,10 @@ export function SalaEnVivo() {
         </p>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-5">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4">
         <Seccion titulo="Últimas preguntas" className="overflow-hidden">
           {vista && vista.tarjetas.length > 0 ? (
-            <ol className="flex min-h-0 flex-col gap-3 overflow-hidden" aria-live="polite">
+            <ol className="flex min-h-0 flex-col gap-2 overflow-hidden" aria-live="polite">
               {vista.tarjetas.map((t) => (
                 <Tarjeta key={t.traceId} t={t} />
               ))}
@@ -230,7 +230,7 @@ export function SalaEnVivo() {
           )}
         </Seccion>
 
-        <div className="flex min-h-0 flex-col gap-5">
+        <div className="flex min-h-0 flex-col gap-4">
           <Seccion titulo="De qué habla la sala" detalle="últimos 30 min" className="flex-[1.2]">
             <Temas temas={vista?.temas ?? []} />
           </Seccion>

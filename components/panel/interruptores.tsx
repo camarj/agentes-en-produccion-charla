@@ -40,7 +40,7 @@ function InterruptorGrande({ etiqueta, activo, onCambiar }: { etiqueta: string; 
 
 export function InterruptoresCaos({ estado, onCambiar }: { estado: EstadoInterruptores; onCambiar: OnCambiar }) {
   return (
-    <section aria-labelledby="titulo-caos" className="rounded-xl border border-border bg-card p-5">
+    <section aria-labelledby="titulo-caos" className="rounded-xl border border-border bg-card p-4">
       <h2 id="titulo-caos" className="text-xl font-medium">
         Interruptores de caos
       </h2>
@@ -48,7 +48,7 @@ export function InterruptoresCaos({ estado, onCambiar }: { estado: EstadoInterru
         {CLAVES_CAOS.map((clave) => {
           const activo = estado.valores[clave] === "on";
           return (
-            <li key={clave} className="flex items-center gap-4 py-3">
+            <li key={clave} className="flex items-center gap-4 py-2">
               <InterruptorGrande
                 etiqueta={CAOS[clave].titulo}
                 activo={activo}
@@ -96,7 +96,7 @@ export function KillSwitch({
   return (
     <section
       aria-labelledby="titulo-kill"
-      className={cn("rounded-xl border p-5", activo ? "border-red-500 bg-red-950/60" : "border-red-900 bg-card")}
+      className={cn("rounded-xl border p-4", activo ? "border-red-500 bg-red-950/60" : "border-red-900 bg-card")}
     >
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
@@ -114,7 +114,7 @@ export function KillSwitch({
             type="button"
             onClick={() => onCambiar("kill_switch", "off")}
             className={cn(
-              "inline-flex h-14 items-center gap-2 rounded-xl border border-border bg-background px-5 text-lg font-medium hover:bg-muted",
+              "inline-flex h-12 items-center gap-2 rounded-xl border border-border bg-background px-5 text-lg font-medium hover:bg-muted",
               FOCO,
             )}
           >
@@ -126,7 +126,7 @@ export function KillSwitch({
             type="button"
             onClick={() => setConfirmando(true)}
             className={cn(
-              "inline-flex h-14 items-center gap-2 rounded-xl bg-red-600 px-5 text-lg font-semibold text-white hover:bg-red-700",
+              "inline-flex h-12 items-center gap-2 rounded-xl bg-red-600 px-5 text-lg font-semibold text-white hover:bg-red-700",
               FOCO,
             )}
           >

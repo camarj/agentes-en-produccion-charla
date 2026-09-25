@@ -19,7 +19,7 @@ export function ColaEscalamientos({
 }) {
   const pendientes = filas.filter((f) => f.estado === "pendiente").length;
   return (
-    <section aria-labelledby="titulo-cola" className="flex min-h-0 flex-col rounded-xl border border-border bg-card p-5">
+    <section aria-labelledby="titulo-cola" className="flex min-h-0 flex-col rounded-xl border border-border bg-card p-4">
       <h2 id="titulo-cola" className="text-xl font-medium">
         Cola de escalamientos <span className="font-mono text-muted-foreground">· {pendientes} {pendientes === 1 ? "pendiente" : "pendientes"}</span>
       </h2>

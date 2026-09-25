@@ -18,7 +18,7 @@ function Metrica({
     <section
       role="group"
       aria-label={titulo}
-      className={cn("flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4", className)}
+      className={cn("flex min-w-0 flex-col gap-1.5 rounded-xl border border-border bg-card px-5 py-3", className)}
     >
       <h3 className="text-lg leading-tight text-muted-foreground">{titulo}</h3>
       <div className="flex items-baseline gap-2 font-mono text-[2.5rem] leading-none tabular-nums">{children}</div>
@@ -42,7 +42,7 @@ export function Metricas({ datos, valores }: { datos: MetricasPanel; valores: Es
   const modelo = modeloActual(valores);
 
   return (
-    <div className="grid grid-cols-5 gap-4">
+    <div className="grid grid-cols-5 gap-3">
       <Metrica titulo="Asistentes activos" detalle="con al menos un mensaje">
         <span>{datos.asistentes.con_mensajes}</span>
         <span className="text-2xl text-muted-foreground">/ {datos.asistentes.registrados}</span>
