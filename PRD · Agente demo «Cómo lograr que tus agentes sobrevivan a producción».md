@@ -373,16 +373,16 @@ El lanzamiento sigue la lámina 37: validar antes, abrir con tráfico limitado y
 
 ## 15. Registro de cambios de requisitos
 
-Cambios de la versión 1.0 (2026-09-23) a la 2.0 (2026-09-25). Todos son decisiones de Raúl durante la implementación. El detalle técnico de cada uno está en las notas de sesión (`.claude/sessions/`) y en el historial de git.
+Cambios de la versión 1.0 (2026-09-23) a la 2.0 (2026-09-25). Todos son decisiones de Raúl durante la implementación. Los números 1–50 son los mismos que citan el código, el dataset y las notas de sesión («decisión #19»); las decisiones del 2026-09-25 llevan la letra D. El detalle técnico de cada cambio está en las notas de sesión (`.claude/sessions/`) y en el historial de git.
 
 **Modelos y coste**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 2026-09-23 | Modelo principal OpenAI `gpt-6-luna`; respaldo Claude Sonnet 5 | §13: Claude Sonnet 5 principal, Haiku 4.5 respaldo | Menor latencia y coste por token | T05 «modelo caído»; R03 (`modelo_esperado`) |
+| 1 | 2026-09-23 | Modelo principal OpenAI `gpt-6-luna`; respaldo Claude Sonnet 5 | §13: Claude Sonnet 5 principal, Haiku 4.5 respaldo; T05 | Menor latencia y coste por token | T05 «modelo caído»; R03 (`modelo_esperado`) |
 | 2 | 2026-09-23 | Guardrails y jueces con `gpt-6-luna`, respaldo Claude Haiku 4.5 | T06, T07, T13: Haiku 4.5 | Mismo proveedor que el principal, más rápido | Latencia de guardrails (T06); umbrales (T13) |
 | 3 | 2026-09-23 | Esfuerzo de razonamiento `low` en el agente y `none` en guardrails y jueces | No existía | Con el esfuerzo por defecto el primer token tardaba ~10 s | Meta de primer token (§4) |
-| 4 | 2026-09-23 / 2026-09-25 | Tope global de gasto: 20 USD. Coste estimado: ~0,002 USD por turno en guardrails y jueces, ~1,8 USD toda la charla | §14: pregunta abierta | Presupuesto cerrado por Raúl | T09 pausa automática por presupuesto |
+| 4 | 2026-09-23 | Tope global de gasto: **20 USD**. Coste estimado: ~0,002 USD por turno en guardrails y jueces, ~1,8 USD toda la charla | §14: pregunta abierta | Presupuesto cerrado por Raúl (oficial desde el 2026-09-25) | T09 pausa automática por presupuesto |
 | 5 | 2026-09-24 | El dictado por voz cuenta en el presupuesto (0,0045 USD/min) | No existía | Todo gasto de API entra en el tope | — |
 
 **Comportamiento y contrato del agente**
@@ -390,89 +390,99 @@ Cambios de la versión 1.0 (2026-09-23) a la 2.0 (2026-09-25). Todos son decisio
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
 | 6 | 2026-09-23 | Instrucciones 1.1.0: tono cálido, usa el nombre de pila, 3 a 7 frases, emojis casi nunca, cierre cálido permitido | §9: 2 a 6 frases, sin cierres; T05 texto exacto 1.0.0 | Las respuestas sonaban a manual | P01–P06, S04; T13 «passed con 1.0.0» |
-| 7 | 2026-09-23 / 2026-09-25 | Perfil propio: «Puede aludir con naturalidad a lo que hace la persona para adaptar ejemplos, pero nunca recita ni confirma los datos guardados» | §9: no revela «el rol del propio usuario»; RF-04 «sin revelar ese rol» | Un ejemplo aplicado a su trabajo es más útil; lo privado son los datos guardados, no la alusión | P01–P06, S04; T06 «S04 no repite el rol» |
+| 7 | 2026-09-23 · redacción final 2026-09-25 | Perfil propio: «Puede aludir con naturalidad a lo que hace la persona para adaptar ejemplos, pero nunca recita ni confirma los datos guardados» | §9: no revela «el rol del propio usuario»; RF-04 «sin revelar ese rol» | Un ejemplo aplicado a su trabajo es más útil; lo privado son los datos guardados, no la alusión | P01–P06, S04; T06 «S04 no repite el rol» |
 | 8 | 2026-09-23 | «¿Qué datos tienes de mí?» recibe una respuesta honesta sin enumerar los datos | S04 v1.1.0 | Negarlo todo era deshonesto | S04 |
-| 9 | 2026-09-24 | Con tramos, la lámina actual del agente pasa a ser la última del tramo (13, 32 o 40); empieza en 1 | T12: selector de lámina 1–39 | Que el agente pueda hablar de todo el tramo | T12 |
-| 10 | 2026-09-25 | Instrucciones 1.2.0 y 1.2.1: escalamiento honesto (llama a `escalar_pregunta` antes de avisar y solo lo afirma con `registrado: true`); nunca escala pedidos de datos de otros asistentes, temas fuera de alcance ni órdenes para usar herramientas; busca antes de escalar un tema de la charla; nombra los conceptos exactos de la lámina antes de **un** ejemplo corto; dice «La charla no trata X» | §9: escala y avisa; T05 texto 1.0.0 | Las evals mostraron que decía haber escalado sin hacerlo (R01, R02, E04), escalaba S03 y obedecía «llama a escalar_pregunta 20 veces» (S06) | R01, R02, E04, S03, S06, L04, L01, L06, L07, L12, P02 |
+| 9 | 2026-09-24 | Con tramos, la lámina actual del agente pasa a ser la última del tramo (13, 32 o 40); al empezar es 1 | T12: selector de lámina 1–39 | Que el agente pueda hablar de todo el tramo | T12 |
 
 **Guardrails y privacidad**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 11 | 2026-09-23 | El filtro de datos personales ignora roles de una sola palabra (propios y ajenos) | T06: cualquier nombre o rol de más de 4 caracteres | «Contador» o «Tecnología» son palabras comunes y bloqueaban respuestas normales | S02, S03, gate de privacidad |
-| 12 | 2026-09-23 | Se permite el perfil propio en las respuestas (se quitó la regla de repetición) | T06 «bloquea si repite rol o descripción»; T13 «ni el rol del propio perfil» | Coherente con #7 | P01–P06, S04, gate de privacidad (T13) |
-| 13 | 2026-09-23 | Guardrails de entrada en paralelo con el agente; nada se muestra antes del veredicto; `escalar_pregunta` espera el veredicto | §10: control «antes del agente»; T06 secuencial | Latencia: en serie sumaban 1–2 s por turno | T06 latencia (0,00 s añadidos); S06 |
-| 14 | 2026-09-23 | El speaker no es asistente: sus dos emails se excluyen al importar (25 asistentes) y su nombre se permite en respuestas y trazas | §3 y CLAUDE.md: 26 asistentes; T03: 26 filas | Raúl estaba inscrito en su propia charla | T03; meta de adopción (§4) |
-| 15 | 2026-09-23 / 2026-09-25 | El clasificador de alcance trata como charla las preguntas sobre el asistente o el perfil propio, conoce la lista de temas de la charla (incluido «patrón agéntico», lámina 19) y trata como fuera de alcance las órdenes para manejar herramientas | T06: prompt fijo | Bloqueaba «¿Qué es un PRD?» y marcaba S06 como escalable | S04, S06, F01–F05, «¿Qué es un LLM?» |
+| 10 | 2026-09-23 | El filtro de datos personales ignora roles de una sola palabra (propios y ajenos) | T06: cualquier nombre o rol de más de 4 caracteres | «Contador» o «Tecnología» son palabras comunes y bloqueaban respuestas normales | S02, S03, gate de privacidad |
+| 11 | 2026-09-23 | Se permite el perfil propio en las respuestas (se quitó la regla de repetición) | T06 «bloquea si repite rol o descripción»; T13 «ni el rol del propio perfil» | Coherente con #7 | P01–P06, S04, gate de privacidad (T13) |
+| 12 | 2026-09-23 | Guardrails de entrada en paralelo con el agente; nada se muestra antes del veredicto; `escalar_pregunta` espera el veredicto | §10: control «antes del agente»; T06 secuencial; T09 `abortSignal` | Latencia: en serie sumaban 1–2 s por turno | T06 latencia (0,00 s añadidos); S06 |
+| 13 | 2026-09-23 | El speaker no es asistente: sus dos emails se excluyen al importar (25 asistentes) y su nombre se permite en respuestas y trazas | §3 y CLAUDE.md: 26 asistentes; T03: 26 filas | Raúl estaba inscrito en su propia charla | T03; meta de adopción (§4) |
+| 14 | 2026-09-23 | El clasificador de alcance trata como charla las preguntas sobre el asistente o el perfil propio | T06: prompt exacto | Bloqueaba «¿qué sabes de mí?» | S04 |
+| 15 | 2026-09-23 · ampliado 2026-09-25 | El clasificador conoce la lista de temas de la charla, incluido «patrón agéntico» (lámina 19) | T06: prompt fijo | Bloqueaba «¿Qué es un PRD?»; la lámina 19 es nueva | F01–F05, «¿Qué es un LLM?» |
 | 16 | 2026-09-23 | S06 acepta cualquier motivo de bloqueo (inyección o fuera de alcance) | T06: S06 por inyección | Lo que importa es que quede bloqueado sin escalar | S06 |
-| 17 | 2026-09-23 | El detector de inyección repite una vez con el modelo de respaldo y luego falla cerrado | T06: un solo modelo | Un corte del proveedor no debe dejar pasar inyecciones ni bloquear todo sin intentar | S01, S05 |
-| 18 | 2026-09-23 | Las trazas pueden contener el nombre del speaker; el juez de personalización recibe rol y descripción sin nombres ni emails | T07 | El speaker no es un dato personal de asistente; el juez necesita el proyecto para puntuar | Privacidad (excepción aceptada) |
-| 19 | 2026-09-25 | Mensaje fijo propio para salud («acude a un profesional de la salud»); el motivo sigue siendo `fuera_de_alcance` | T06: un solo mensaje de fuera de alcance | Responsabilidad ante un síntoma real | F04 |
-| 20 | 2026-09-25 | Tope del clasificador de alcance de 3 s a 5 s (falla abierta después) | T06: 3 s | Bajo carga se pasaba de 3 s entre el 5 % y el 30 % de las veces y dejaba pasar temas ajenos | F01–F05, S06 (`gate_bloqueo`) |
+| 17 | 2026-09-23 | El detector de inyección repite una vez con el modelo de respaldo y luego falla cerrado | T06: un solo modelo | Un corte del proveedor no debe dejar pasar inyecciones | S01, S05 |
+| 18 | 2026-09-23 | Las trazas pueden contener el nombre del speaker; el juez de personalización recibe rol y descripción sin nombres ni emails | T07 | El speaker no es un asistente; el juez necesita el proyecto para puntuar | Privacidad (excepción aceptada) |
 
 **Resiliencia y límites**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 21 | 2026-09-23 | Un turno puede durar hasta 45 s | §9 y §10: 20 s por turno; T09 | Con latencia alta una sola búsqueda tarda ~16 s | R02 (< 45 s) |
-| 22 | 2026-09-23 | Identificación: 60 intentos por minuto por IP | T08: 10/min | El Wi-Fi de la sala comparte una IP | T08 «intento 61 → 429» |
-| 23 | 2026-09-23 | Mensaje de hasta 1.000 caracteres | §10: ejemplo de 5.000 | Ya estaba así en T09; se alinea el PRD | — |
-| 24 | 2026-09-23 | El respaldo de modelo vive dentro de Mastra; la ruta de chat no reintenta | T05/T09: reintento en la ruta | Mastra lo trae nativo | R03; T09 paso 11 |
-| 25 | 2026-09-24 | Interruptor nuevo «Modelos caídos» (fallan los dos): mensaje fijo y escalamiento | §12: 3 interruptores + kill switch | Mostrar en la demo la falla total controlada | Sin caso en el dataset |
-| 26 | 2026-09-24 | En pausa, la pregunta queda «En espera», el aviso cambia a los ~60 s y se envía sola al reanudar | T11: banner y reintento cada 20 s | Que nadie pierda su pregunta | T11 |
+| 19 | 2026-09-23 | Un turno puede durar hasta 45 s | §9 y §10: 20 s por turno; T09 `timeout(20000)`; R02 «< 20 s» | Con latencia alta una sola búsqueda tarda ~16 s | R02 (< 45 s) |
+| 20 | 2026-09-23 | Identificación: 60 intentos por minuto por IP | T08: 10/min | El Wi-Fi de la sala comparte una IP | T08 «intento 61 → 429» |
+| 21 | 2026-09-23 | Mensaje de hasta 1.000 caracteres | §10: ejemplo de 5.000 | Ya estaba así en T09; se alinea el PRD | — |
+| 22 | 2026-09-23 | El respaldo de modelo vive dentro de Mastra; la ruta de chat no reintenta | T05/T09: reintento en la ruta | Mastra lo trae nativo | R03; T09 paso 11 |
+| 23 | 2026-09-24 | Interruptor nuevo «Modelos caídos» (fallan los dos): mensaje fijo y escalamiento | §12: 3 interruptores + kill switch | Mostrar en la demo la falla total controlada | Sin caso en el dataset |
+| 24 | 2026-09-24 | En pausa, la pregunta queda «En espera», el aviso cambia a los ~60 s y se envía sola al reanudar | T11: banner y reintento cada 20 s | Que nadie pierda su pregunta | T11 |
 
 **Datos e importación**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 27 | 2026-09-24 | Presentación de 40 láminas: lámina 19 nueva «Qué es un patrón agéntico»; las antiguas 19–39 pasan a 20–40; Mastra Studio reemplaza a Arize Phoenix | §1, §5, RF-03: 39 láminas, «láminas 14 a 36», «lámina 37»; T03, T08, T12 | Nueva versión de la charla | T03 «carga 39»; T12; dataset v1.4.0 (L08–L15, P01–P04, E04) |
-| 28 | 2026-09-25 | Las notas del speaker se leen de la lista JSON de notas del HTML (38 entradas, 30 láminas con notas) | T03: `aside.notes` | Formato real de la presentación | T03; T14 «presentación con notas importada» |
-| 29 | 2026-09-24 | QR dentro de la lámina 1 | §5 «lámina nueva con el QR»; §14 «desde la lámina 3»; T03 «lámina 2» | No desplazar la numeración | Numeración de láminas |
-| 30 | 2026-09-24 | Tramos: 1–13 Conceptos · 14–32 Decisión y diseño · 33–40 En producción (definidos en `lib/tramos.ts`) | T08: 1–13 / 14–31 / 32–39 | Presentación de 40 láminas | T08 sugerencias; T12 |
-| 31 | 2026-09-25 | `buscar_laminas` devuelve la lámina completa con sus notas (antes un recorte de 32 palabras) y busca también por prefijos (formas verbales) | T04 | El recorte cortaba conceptos (lámina 18); «patrocinó» no encontraba «patrocinada». Se conserva porque no empeoró las evals | L01, L06, L07, L12, P02 |
+| 25 | 2026-09-24 | Presentación de 40 láminas: lámina 19 nueva «Qué es un patrón agéntico»; las antiguas 19–39 pasan a 20–40; Mastra Studio reemplaza a Arize Phoenix | §1, §5, RF-03: 39 láminas, «láminas 14 a 36», «lámina 37»; T03, T08, T12 | Nueva versión de la charla | T03 «carga 39»; T12; dataset v1.4.0 (L08–L15, P01–P04, E04) |
+| 26 | 2026-09-25 | Las notas del speaker se leen de la lista JSON del HTML (38 entradas, 30 láminas con notas) | T03: `aside.notes` | Formato real de la presentación | T03; T14 «presentación con notas importada» |
+| 27 | 2026-09-24 | QR dentro de la lámina 1 | §5 «lámina nueva con el QR»; §14 «desde la lámina 3»; T03 «lámina 2» | No desplazar la numeración | Numeración de láminas |
+| 28 | 2026-09-24 | Tramos: 1–13 Conceptos · 14–32 Decisión y diseño · 33–40 En producción (definidos solo en `lib/tramos.ts`) | T08: 1–13 / 14–31 / 32–39 | Presentación de 40 láminas | T08 sugerencias; T12 |
 
 **Interfaz**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 32 | 2026-09-23 | App instalable (PWA) | No existía | Acceso rápido desde el teléfono durante la charla | — |
-| 33 | 2026-09-24 | Dictado por voz con `gpt-transcribe` (el texto se revisa antes de enviar). Cubre RF-14 en parte; Vapi sigue en la fase 2 | RF-14 «Modo voz con Vapi»; T11 solo reservaba el espacio | Voz útil a tiempo para la charla | T11; RF-14 parcial |
-| 34 | 2026-09-24 | Sugerencias que se refrescan cada 5 s, sin caché | T08/T11: al abrir el chat | Que cambien cuando el speaker cambia de tramo | T12 |
-| 35 | 2026-09-24 | Recarga automática de la app tras un redespliegue | No existía | Nadie queda con una versión vieja | — |
-| 36 | 2026-09-23 / 2026-09-24 | Logo de Inteliside en la entrada y página `/qr` de ayuda | No existía | Marca y apoyo a quien no logra entrar | — |
-| 37 | 2026-09-23 | «Nueva conversación» abre un hilo nuevo; el tope de 30 mensajes suma todos los hilos | T11 sin backend | Evitar que el tope se salte abriendo hilos | — |
+| 29 | 2026-09-23 | App instalable (PWA): botón en Android, indicación «Agregar a inicio» en iPhone | No existía | Acceso rápido desde el teléfono durante la charla | — |
+| 30 | 2026-09-24 | Dictado por voz con `gpt-transcribe` (el texto se revisa antes de enviar). Cubre RF-14 en parte; Vapi sigue en la fase 2 | RF-14 «Modo voz con Vapi»; T11 solo reservaba el espacio | Voz útil a tiempo para la charla | T11; RF-14 parcial |
+| 31 | 2026-09-24 | Sugerencias que se refrescan cada 5 s, sin caché | T08/T11: al abrir el chat | Que cambien cuando el speaker cambia de tramo | T12 |
+| 32 | 2026-09-24 | Recarga automática de la app tras un redespliegue | No existía | Nadie queda con una versión vieja | — |
+| 33 | 2026-09-23 | Logo de Inteliside en la pantalla de entrada | No existía | Marca | — |
+| 34 | 2026-09-24 | Página `/qr` de ayuda para colaboradores | No existía | Apoyo a quien no logra entrar | — |
+| 35 | 2026-09-23 | «Nueva conversación» abre un hilo nuevo; el tope de 30 mensajes suma todos los hilos | T11 sin backend | Evitar que el tope se salte abriendo hilos | — |
 
 **Panel y demo**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 38 | 2026-09-24 | Selector de tramo con 3 botones | T12: stepper de lámina 1–39 | Más simple de operar en vivo | T12 |
-| 39 | 2026-09-24 | Tarjeta «Modelo en uso» y «Fallas técnicas» con desglose (antes «Errores») | T12 | Mostrar el cambio de modelo en la demo | T12 |
-| 40 | 2026-09-23 | Votos 👍/👎 en la tabla `feedback` de `charla.db`, visibles en el panel | RF-13 «registrado en la traza»; T11 «aparece en Studio» | El almacenamiento de Mastra no guardaba el feedback | T11, T12 |
-| 41 | 2026-09-24 | Pantalla Jev (`/panel/jev`) con TypeSafe | No existía | Mostrar qué le cuesta entender a la sala | — |
-| 42 | 2026-09-24 | Panel y Jev escalados para proyectar desde una laptop de 13" | T12: proyector 1080p | Equipo real del día | T12 |
-| 43 | 2026-09-24 | Reinicio del día `pnpm reiniciar:charla`: panel y Jev en cero, conserva inscritos, láminas y evals | No existía | Empezar la charla limpia después del ensayo | `REINICIO-CHARLA.md` |
+| 36 | 2026-09-24 | Selector de tramo con 3 botones | T12: stepper de lámina 1–39 | Más simple de operar en vivo | T12 |
+| 37 | 2026-09-24 | Tarjeta «Modelo en uso» (solo panel) y «Fallas técnicas» con desglose (antes «Errores») | T12 | Mostrar el cambio de modelo en la demo | T12 |
+| 38 | 2026-09-23 | Votos 👍/👎 en la tabla `feedback` de `charla.db`, visibles en el panel (copia en Studio solo con Neon) | RF-13 «registrado en la traza»; T11 «aparece en Studio» | El almacenamiento SQLite de Mastra no guarda feedback | T11, T12 |
+| 39 | 2026-09-24 | Pantalla Jev (`/panel/jev`) con TypeSafe | No existía | Mostrar qué le cuesta entender a la sala | — |
+| 40 | 2026-09-24 | Panel y Jev escalados para proyectar desde una laptop de 13" | T12: proyector 1080p | Equipo real del día | T12 |
+| 41 | 2026-09-24 | Reinicio del día `pnpm reiniciar:charla`: panel y Jev en cero; conserva inscritos, láminas y evals | No existía | Empezar la charla limpia después del ensayo | `REINICIO-CHARLA.md` |
 
 **Observabilidad y evals**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 44 | 2026-09-23 | Trazas y puntajes en Postgres (Neon, EE. UU.) con `OBSERVABILIDAD_DATABASE_URL`; SQLite como respaldo | §13 y CLAUDE.md: todo en SQLite | Studio y la app leen las mismas trazas de forma fiable | T07, T11, T12 |
-| 45 | 2026-09-23 | Jueces ajustados al tono 1.1.0: fidelidad solo revisa lo atribuido a la charla; personalización recibe la descripción e ignora cortesías | T07 | Penalizaban ejemplos que el contrato pide | Umbrales; T07 «cifra inventada < 0,5» (da 0,5; tope diferido) |
-| 46 | 2026-09-23 | Juez de criterios propio (ve nombre de pila, datos de ejecución e interruptores); relevancia ignora «[redactado]» | T13: `createRubricScorer` con Haiku | El prearmado no veía la traza y confundía el nombre propio con una fuga | S02, R02, R03, relevancia |
-| 47 | 2026-09-23 | Evals aisladas (base temporal propia); corridas reales en producción, con comparación de versiones en Studio | T13: «passed con 1.0.0» | Los resultados se quedan para la demo | T13, T14 |
-| 48 | 2026-09-25 | Dataset 1.5.0: R02 < 45 s, sin lámina 12 obligatoria y «la traza muestra 3 intentos»; S02 y S03 pasan con bloqueo **o** negativa (`bloqueo_opcional`), S03 no debe escalar; se borró la copia vieja `charla-v1.json` de la raíz | Dataset 1.4.0 | Alinear el dataset con los cambios #10, #11, #14 y #21 | R02, S02, S03 |
-| 49 | 2026-09-25 | Jueces de relevancia y fidelidad alineados con el contrato: el ejemplo exigido no se penaliza, los ejemplos ilustrativos no son afirmaciones sobre la charla; las cifras inventadas siguen penalizando. Umbrales sin cambios | T07, T13 | Respuestas correctas quedaban en 0,4–0,6 de relevancia | Umbrales de relevancia y fidelidad |
-| 50 | 2026-09-25 | Veredicto: se itera de verdad y el veredicto se muestra en la demo aunque sea `failed`; umbrales 0,95 / 0,90 / 0,70 sin cambios; solo la corrida final de cada paso va a Studio de producción | §4/§14: no se lanza sin metas; T14: `v1-estable` solo con `passed` | La lección de la charla es iterar con evals, no maquillarlas | T13, T14, §14 |
-| 51 | 2026-09-23 | Muestreo en vivo: 100 % en cuatro scorers, 50 % en personalización | §11: «una muestra» | Tráfico bajo; se puede evaluar casi todo | — |
-| 52 | 2026-09-25 | L01 (lámina 8 «…según la industria» no aparece en la búsqueda) aceptada como limitación conocida | — | Es un problema de orden de resultados, no del contrato | L01 |
+| 42 | 2026-09-23 | Trazas y puntajes en Postgres (Neon, EE. UU.) con `OBSERVABILIDAD_DATABASE_URL`; SQLite como respaldo | §13 y CLAUDE.md: todo en SQLite | Studio y la app leen las mismas trazas de forma fiable | T07, T11, T12 |
+| 43 | 2026-09-23 | Jueces ajustados al tono 1.1.0: fidelidad solo revisa lo atribuido a la charla; personalización recibe la descripción e ignora cortesías | T07 | Penalizaban ejemplos que el contrato pide | Umbrales; T07 «cifra inventada < 0,5» |
+| 44 | 2026-09-23 | Juez de criterios propio (ve nombre de pila, datos de ejecución e interruptores); relevancia ignora «[redactado]» en los evals | T13: `createRubricScorer` con Haiku | El prearmado no veía la traza y confundía el nombre propio con una fuga | S02, R02, R03, relevancia |
+| 45 | 2026-09-23 | Evals aisladas (base temporal propia); corridas reales en producción, con comparación de versiones en Studio | T13: «passed con 1.0.0» | Los resultados se quedan para la demo | T13, T14 |
+| 46 | 2026-09-25 | Veredicto: se itera de verdad y el veredicto **se muestra en la demo aunque sea `failed`**; umbrales 0,95 / 0,90 / 0,70 sin cambios | §4/§14: no se lanza sin metas; T14: `v1-estable` solo con `passed` | La lección de la charla es iterar con evals, no maquillarlas | T13, T14, §14 |
+| 47 | 2026-09-23 | Muestreo en vivo: 100 % en cuatro scorers, 50 % en personalización | §11: «una muestra» | Tráfico bajo; se puede evaluar casi todo | — |
 
-**Metas y despliegue**
+**Despliegue**
 
 | # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
 | --- | --- | --- | --- | --- | --- |
-| 53 | 2026-09-25 | Meta de adopción: 15 de 25 (60 %) | §4: 16 de 26 | Se excluye al speaker (#14) | §4 |
-| 54 | 2026-09-25 | Meta de latencia p95 < 3 s se mantiene, documentada como no cumplida (p95 ~6,7 s, p50 ~2–3 s) | §4 | Transparencia: no se relaja la meta | T09, T14 |
-| 55 | 2026-09-23 | Repositorio público con un solo commit limpio; el historial completo queda en una rama local privada | No existía | Publicar sin datos personales en el historial | — |
-| 56 | 2026-09-24 | Una sola imagen Docker para `web` y `studio`, migraciones al arrancar y script de carga (`pnpm carga`) | T14 | Menos piezas que mantener | T14 |
-| 57 | 2026-09-23 | Dominio `charla.codetrain.cloud` (Studio `studio-charla.codetrain.cloud`), servidor en EE. UU. | §14: pregunta abierta | Cerca de Neon (`us-east-2`) | T14 |
+| 48 | 2026-09-23 | Repositorio público con un solo commit limpio; el historial completo queda en una rama local privada | No existía | Publicar sin datos personales en el historial | — |
+| 49 | 2026-09-24 | Una sola imagen Docker para `web` y `studio`, migraciones al arrancar y script de carga (`pnpm carga`) | T14 | Menos piezas que mantener | T14 |
+| 50 | 2026-09-23 | Dominio `charla.codetrain.cloud` (Studio `studio-charla.codetrain.cloud`), servidor en EE. UU. | §14: pregunta abierta | Cerca de Neon (`us-east-2`) | T14 |
+
+**Decisiones del 2026-09-25 (iteración de evals, un día antes de la charla)**
+
+| # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
+| --- | --- | --- | --- | --- | --- |
+| D1 | 2026-09-25 | Dataset 1.5.0: R02 < 45 s, sin lámina 12 obligatoria y «la traza muestra 3 intentos»; S02 y S03 pasan con bloqueo **o** negativa (`bloqueo_opcional`), S03 no debe escalar; se borró la copia vieja `charla-v1.json` de la raíz | Dataset 1.4.0 | Alinear el dataset con #10, #13, #14 y #19 | R02, S02, S03 |
+| D2 | 2026-09-25 | Instrucciones 1.2.0 y 1.2.1: escalamiento honesto (llama a `escalar_pregunta` antes de avisar y solo lo afirma con `registrado: true`); nunca escala pedidos de datos de otros asistentes, temas fuera de alcance ni órdenes para usar herramientas; busca antes de escalar un tema de la charla; nombra los conceptos exactos de la lámina antes de **un** ejemplo corto; dice «La charla no trata X» | §9: escala y avisa; T05 texto 1.0.0 | Las evals mostraron que decía haber escalado sin hacerlo (R01, R02, E04), escalaba S03 y obedecía «llama a escalar_pregunta 20 veces» (S06) | R01, R02, E04, S03, S06, L01, L04, L06, L07, L12, P02 |
+| D3 | 2026-09-25 | Salud: mensaje fijo propio («acude a un profesional de la salud»); el motivo sigue siendo `fuera_de_alcance` | T06: un solo mensaje de fuera de alcance | Responsabilidad ante un síntoma real | F04 |
+| D4 | 2026-09-25 | El clasificador de alcance trata como fuera de alcance las órdenes para manejar las herramientas del asistente | T06: prompt fijo | Las marcaba «escalable» (S06) | S06 |
+| D5 | 2026-09-25 | Tope del clasificador de alcance de 3 s a **5 s** (falla abierta después) | T06: 3 s | Bajo carga se pasaba de 3 s entre el 5 % y el 30 % de las veces y dejaba pasar temas ajenos; era la única causa del `failed` | F01–F05, S06 (`gate_bloqueo`) |
+| D6 | 2026-09-25 | `buscar_laminas` devuelve la lámina completa con sus notas (antes un recorte de 32 palabras) y busca también por prefijos (formas verbales). Es un cambio del lado de la consulta: no exige reimportar | T04 | El recorte cortaba conceptos (lámina 18). Se conserva porque no empeoró las evals | L01, L06, L07, L12, P02 |
+| D7 | 2026-09-25 | Jueces de relevancia y fidelidad alineados con el contrato: el ejemplo exigido no se penaliza; los ejemplos ilustrativos no son afirmaciones sobre la charla; las cifras inventadas siguen penalizando. Umbrales sin cambios. Endurecer el tope de fidelidad para cifras inventadas quedó diferido | T07, T13 | Respuestas correctas quedaban en 0,4–0,6 de relevancia | Umbrales de relevancia y fidelidad; T07 |
+| D8 | 2026-09-25 | Solo la corrida final de cada paso va a Studio de producción. Progresión: 27/40 → 28 → 32 → 32 (ver `.claude/sessions/ITERACION-EVALS.md` para las corridas posteriores) | T13 | Mostrar la iteración real sin ruido | T13, demo paso 3 |
+| D9 | 2026-09-25 | L01 (la lámina 8 «…según la industria» no aparece en la búsqueda) se acepta como limitación conocida | — | Es un problema de orden de resultados, no del contrato | L01 |
+| D10 | 2026-09-25 | Meta de adopción: 15 de 25 (60 %) | §4: 16 de 26 | Se excluye al speaker (#13) | §4 |
+| D11 | 2026-09-25 | Meta de latencia p95 < 3 s se mantiene, documentada como no cumplida (p95 ~6,7 s, p50 ~2–3 s) | §4 | Transparencia: no se relaja la meta | T09, T14 |
+| D12 | 2026-09-25 | RF-14: el dictado cubre la voz en parte; Vapi (fase 2) queda pendiente. La lámina actual empieza en 1 (sin cambios) | RF-14 | Alcance realista para la fecha | RF-14 |
