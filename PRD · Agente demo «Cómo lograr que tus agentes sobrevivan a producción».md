@@ -295,7 +295,7 @@ Cada interruptor queda marcado en la traza, para que el antes y el después se v
 
 ## 13. Arquitectura y stack
 
-Un solo agente con uso de herramientas y RAG agéntico (patrón ReAct de un solo agente, láminas 20 y 21), dentro de una app Next.js desplegada en el servidor Dokploy de Inteliside. Es la arquitectura de la lámina 28 aplicada.
+Un solo agente con uso de herramientas en un bucle ReAct (lámina 21) y RAG agéntico (lámina 23), dentro de una app Next.js desplegada en el servidor Dokploy de Inteliside. Es la arquitectura de la lámina 28 aplicada.
 
 ```mermaid
 flowchart LR
