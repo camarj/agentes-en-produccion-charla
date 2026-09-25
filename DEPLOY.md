@@ -164,5 +164,5 @@ Reporta a Raúl: URLs, resultados de evals (tabla por categoría y veredicto de 
 - No subir `.env`, el xlsx ni ningún dato personal al repo.
 - No escalar a más de 1 réplica.
 - No borrar el volumen `agente-charla-data` (contiene inscritos, conversaciones, votos y la memoria del agente).
-- No correr `pnpm purgar:personales` hasta después de la charla (borra datos personales de asistentes).
+- No correr `pnpm purgar:personales` hasta después de la charla (borra datos personales de asistentes). Para dejar los paneles en cero antes de la charla usa `pnpm reiniciar:charla` (ver `REINICIO-CHARLA.md`).
 - No cambiar instrucciones, umbrales ni guardrails para que los evals pasen.

@@ -13,6 +13,7 @@
     "importar:laminas": "tsx scripts/importar-laminas.ts",
     "importar:inscritos": "tsx scripts/importar-inscritos.ts",
     "purgar:personales": "tsx scripts/purgar-personales.ts",
+    "reiniciar:charla": "tsx scripts/reiniciar-charla.ts",
     "iconos": "tsx scripts/generar-iconos.ts",
     "evals": "tsx --env-file-if-exists=.env evals/run.ts",
     "carga": "tsx scripts/carga.ts"
