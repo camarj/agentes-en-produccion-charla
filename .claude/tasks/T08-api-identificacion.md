@@ -1,5 +1,13 @@
 # T08 · API de identificación, perfil, sugerencias y feedback
 
+> **Actualización 2026-09-25 — requisitos vigentes:**
+> - **Identificación:** 60 intentos por minuto por IP (antes 10), porque el Wi-Fi de la sala comparte una IP.
+> - **Tramos** (40 láminas): 1–13 Conceptos · 14–32 Decisión y diseño · 33–40 En producción. Se definen solo en `lib/tramos.ts`. El chat pide las sugerencias cada 5 s, sin caché.
+> - **Feedback:** se guarda en la tabla `feedback` de `charla.db` (un voto por asistente y traza, el último reemplaza al anterior) y se copia a la observabilidad de Mastra solo si hay Neon (`OBSERVABILIDAD_DATABASE_URL`).
+> - El speaker no es asistente (25 inscritos).
+>
+> Fuente de verdad de los cambios: PRD §15 «Registro de cambios de requisitos». El texto de abajo es el plan original y se conserva como historial; donde choca con esta lista, gana esta lista.
+
 **Objetivo:** Implementar el acceso por email con sesión en cookie, la captura de perfil, las sugerencias iniciales y el registro de feedback.
 
 **Cubre:** RF-01, RF-02, RF-09, RF-13.
@@ -23,10 +31,10 @@
 | POST `/api/feedback` | `{ trace_id, valor: 1 \| -1 }` | `{ ok: true }` | 400, 401 |
 
 ## Lógica
-1. **identificar:** validar email con zod; rate limit 10/min por IP. Buscar asistente. Si existe con rol → `listo`. Si existe sin rol → `falta_perfil`. Si no existe → crear invitado con `nombre = ''` y devolver `nuevo`. En todos los casos crear sesión y setear cookie. `nombre_pila` = primera palabra del nombre. **Nunca** devolver rol, descripción ni email.
+1. **identificar:** validar email con zod; rate limit ~~10/min~~ **60/min** por IP. Buscar asistente. Si existe con rol → `listo`. Si existe sin rol → `falta_perfil`. Si no existe → crear invitado con `nombre = ''` y devolver `nuevo`. En todos los casos crear sesión y setear cookie. `nombre_pila` = primera palabra del nombre. **Nunca** devolver rol, descripción ni email.
 2. **perfil:** requiere sesión. Para `nuevo`, `nombre` es obligatorio. Guarda y responde `nombre_pila`.
-3. **sugerencias:** lee `lamina_actual` y devuelve 3 preguntas de una tabla fija en código por tramos: 1–13 (conceptos: agente, loop, harness), 14–31 (decisión, PRD, patrones), 32–39 (resiliencia, guardrails, evals, observabilidad).
-4. **feedback:** requiere sesión; llama `createFeedback` de la observabilidad de Mastra con `feedbackType: 'rating'`, `feedbackSource: 'user'` anclado al `trace_id`.
+3. **sugerencias:** lee `lamina_actual` y devuelve 3 preguntas de una tabla fija en código por tramos: 1–13 (conceptos: agente, loop, harness), ~~14–31~~ **14–32** (decisión, PRD, patrones), ~~32–39~~ **33–40** (resiliencia, guardrails, evals, observabilidad).
+4. **feedback:** requiere sesión; **vigente:** guarda en `charla.db` (tabla `feedback`) y luego llama `createFeedback` de la observabilidad de Mastra con `feedbackType: 'rating'`, `feedbackSource: 'user'` anclado al `trace_id`.
 5. Respuestas de error con forma `{ error: codigo, mensaje }` en español.
 
 ## Checklist

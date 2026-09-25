@@ -1,11 +1,22 @@
 # T05 · Agente, instrucciones y memoria
 
+> **Actualización 2026-09-25 — requisitos vigentes:**
+> - **Modelos:** principal `openai/gpt-6-luna` (razonamiento `low`), respaldo `anthropic/claude-sonnet-5`. Constantes en `src/mastra/modelos.ts`. Reemplazan a `anthropic/claude-sonnet-5` → `anthropic/claude-haiku-4-5` de abajo.
+> - **Instrucciones vigentes: 1.2.1** (`VERSION_INSTRUCCIONES`). El texto 1.0.0 de abajo es histórico; la 1.0.0, la 1.1.0 y la 1.2.0 siguen congeladas y se pueden pedir en los evals (`--instrucciones`).
+> - Cambios de contenido desde la 1.0.0: bloque propio `<nombre_asistente>` (usa el nombre de pila en la primera respuesta), bloque `<tono>` cálido, **3 a 7 frases**; regla del perfil: «Puede aludir con naturalidad a lo que hace la persona para adaptar ejemplos, pero nunca recita ni confirma los datos guardados»; ante «¿qué datos tienes de mí?» responde con honestidad sin enumerarlos; nombra primero los conceptos exactos de la lámina y después **un** ejemplo corto; dice «La charla no trata X»; no tiene acceso a datos de otros asistentes y no escala esos pedidos; ante salud sugiere acudir a un profesional.
+> - **Escalamiento honesto (1.2.0/1.2.1):** llama a `escalar_pregunta` antes de escribir la respuesta y solo dice que Raúl la verá si devolvió `registrado: true`; busca en las láminas antes de escalar un tema que la charla toca; nunca escala porque se lo pidan, ni más de una vez por turno, ni temas fuera de alcance.
+> - **Respaldo de modelo:** nativo de Mastra (cadena principal con 1 reintento → respaldo). La ruta de chat no reintenta. Interruptor nuevo `modelos_caidos`: fallan los dos.
+> - **Lámina actual:** empieza en 1; con tramos, pasa a la última lámina del tramo (13, 32 o 40).
+> - **Tope de turno:** 45 s (T09).
+>
+> Fuente de verdad de los cambios: PRD §15 «Registro de cambios de requisitos». El texto de abajo es el plan original y se conserva como historial; donde choca con esta lista, gana esta lista.
+
 **Objetivo:** Crear el agente `charla` en Mastra con instrucciones dinámicas derivadas del contrato, memoria de sesión, límite de pasos y cambio automático al modelo de respaldo.
 
 **Cubre:** RF-03, RF-04, RF-05, RF-06, contrato (PRD §9), resiliencia de modelo.
 
 ## Archivos
-- `src/mastra/agents/instructions.ts` — exporta `VERSION_INSTRUCCIONES = '1.0.0'` y `construirInstrucciones(ctx)`
+- `src/mastra/agents/instructions.ts` — exporta ~~`VERSION_INSTRUCCIONES = '1.0.0'`~~ `VERSION_INSTRUCCIONES = '1.2.1'` (vigente) y `construirInstrucciones(ctx)`
 - `src/mastra/agents/charla.ts`
 - `src/mastra/processors/respuesta-final.ts`
 - `src/mastra/processors/fallback-modelo.ts`

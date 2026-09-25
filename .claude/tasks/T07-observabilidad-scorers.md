@@ -1,5 +1,16 @@
 # T07 · Observabilidad y scorers
 
+> **Actualización 2026-09-25 — requisitos vigentes:**
+> - **Jueces:** `openai/gpt-6-luna` (razonamiento `none`), respaldo `anthropic/claude-haiku-4-5`. No Haiku como principal.
+> - **Trazas en Neon:** con `OBSERVABILIDAD_DATABASE_URL` las trazas y puntajes van a Postgres (Neon, EE. UU.); sin ella, a `data/mastra.db`.
+> - **Fidelidad:** solo revisa lo que se atribuye a la charla; los ejemplos ilustrativos (también en segunda persona: «en tu caso…», «podrías…») no son afirmaciones sobre la charla. Una cifra inventada atribuida a la charla sigue penalizando.
+> - **Relevancia:** el prearmado recibe al final de sus instrucciones el contrato (`CONTRATO_RELEVANCIA`): el ejemplo corto que el contrato exige cuenta como respuesta. Umbral 0,90 sin cambios.
+> - **Personalización:** recibe rol **y descripción** (sin nombres ni emails). Rúbrica: 1 = ejemplo aplicado a su trabajo o proyecto (nombrarlo con naturalidad está bien); 0,5 = menciona el rol sin aplicarlo; 0 = genérico o recita los datos guardados. Los turnos sin concepto que explicar se omiten.
+> - **Feedback:** el voto se guarda en la tabla `feedback` de `charla.db` (fuente de verdad) y se copia a Studio solo con Neon.
+> - El nombre del speaker puede aparecer en las trazas (no es asistente).
+>
+> Fuente de verdad de los cambios: PRD §15 «Registro de cambios de requisitos». El texto de abajo es el plan original y se conserva como historial; donde choca con esta lista, gana esta lista.
+
 **Objetivo:** Trazar el 100 % de los turnos en `mastra.db` sin datos personales y evaluar el tráfico real con scorers en vivo visibles en Mastra Studio.
 
 **Cubre:** evals y observabilidad (PRD §11), RF-13.
@@ -23,7 +34,7 @@
 
 ## Checklist
 - [x] Una pregunta en el chat genera una traza visible en Studio con modelo, herramientas, latencia y tokens
-- [x] La traza tiene `rol_anonimo` y **no** contiene email ni nombre
+- [x] La traza tiene `rol_anonimo` y **no** contiene email ni nombre (excepción vigente: el nombre del speaker)
 - [x] Los 5 scorers aparecen en Studio sobre tráfico real
-- [ ] Una respuesta que inventa una cifra obtiene fidelidad < 0,5
+- [ ] ~~Una respuesta que inventa una cifra obtiene fidelidad < 0,5~~ → **Vigente:** una cifra inventada como afirmación principal da 0; dentro de una respuesta correcta da 0,5 (juez real, 2026-09-25). Endurecer ese segundo caso quedó diferido (PRD §14)
 - [x] Tests de `rolAnonimo` pasan

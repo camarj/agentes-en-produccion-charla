@@ -1,5 +1,15 @@
 # T11 · UI de chat
 
+> **Actualización 2026-09-25 — requisitos vigentes:**
+> - **Dictado por voz implementado** en el espacio reservado: botón de micrófono que transcribe con `gpt-transcribe` (`app/api/transcribir`, `src/mastra/voz.ts`); la persona revisa el texto antes de enviarlo. Cubre la voz en parte; Vapi sigue en la fase 2.
+> - **PWA:** botón «Instalar app» en Android e indicación «Agregar a inicio» en iPhone. La app se recarga sola tras un redespliegue.
+> - **Pausa (423):** la pregunta queda «En espera»; a los ~60 s el aviso cambia y la pregunta se envía sola cuando el asistente vuelve (reemplaza el reintento cada 20 s).
+> - **Sugerencias:** se refrescan cada 5 s, siguiendo el tramo que elige el speaker.
+> - **Feedback:** se guarda en `charla.db` y el panel lo muestra; con Neon también aparece en la pestaña Feedback de la traza en Studio.
+> - «Nueva conversación» crea un hilo nuevo en el servidor; el tope de 30 mensajes suma todos los hilos. Logo de Inteliside en la entrada.
+>
+> Fuente de verdad de los cambios: PRD §15 «Registro de cambios de requisitos». El texto de abajo es el plan original y se conserva como historial; donde choca con esta lista, gana esta lista.
+
 **Objetivo:** Construir la interfaz de chat mobile-first con las convenciones de Claude y ChatGPT: streaming, composer fijo, scroll inteligente, acciones por respuesta y todos los estados de error.
 
 **Cubre:** RF-03, RF-08, RF-09, RF-12, RF-13, usabilidad (PRD §8).
@@ -34,7 +44,7 @@
 | Estado | Comportamiento |
 | --- | --- |
 | Stream interrumpido | Mensaje parcial + "Se interrumpió la respuesta" + botón Reintentar |
-| 423 mantenimiento | Banner superior; composer deshabilitado; reintento automático cada 20 s |
+| 423 mantenimiento | Banner superior; ~~composer deshabilitado; reintento automático cada 20 s~~ **vigente:** la pregunta queda «En espera», el aviso cambia a los ~60 s y se envía sola al reanudar |
 | 429 tope | Mensaje del servidor; composer deshabilitado |
 | 429 frecuencia | Toast "Vas muy rápido, espera unos segundos" |
 | Sin conexión | Banner "Sin conexión" con `navigator.onLine`; reenviar al volver |
@@ -47,10 +57,10 @@ Al montar, cargar `/api/chat/historial` y pasarlo como mensajes iniciales.
 - [ ] En un teléfono real (iOS y Android) el composer queda sobre el teclado y no hay saltos de layout — *Sin verificar en teléfono real. Emulado en Chromium (táctil, 360 × 640, teclado simulado achicando la vista a 330 px): el composer queda abajo y visible. Falta probar en un iPhone y un Android reales.*
 - [x] Streaming fluido; el botón detener corta la respuesta
 - [x] Si subo durante el stream, la vista no me arrastra al final
-- [x] Copiar y feedback funcionan y el feedback aparece en Studio — *Desvío (Raúl, 2026-09-23): `@mastra/libsql` no guarda feedback, así que el voto no aparece en Studio. Se guarda en la tabla `feedback` de `charla.db` (verificado en vivo) y lo muestra el panel de T12.*
+- [x] Copiar y feedback funcionan y el feedback aparece en Studio (**vigente:** en el panel siempre; en Studio solo con Neon) — *Desvío (Raúl, 2026-09-23): `@mastra/libsql` no guarda feedback, así que el voto no aparece en Studio. Se guarda en la tabla `feedback` de `charla.db` (verificado en vivo) y lo muestra el panel de T12.*
 - [x] Todos los estados de la tabla se pueden provocar y se ven bien — *429 frecuencia y stream interrumpido se provocaron en vivo interceptando la respuesta con la misma forma que envía el servidor; el resto, con el servidor real.*
 - [x] `aria-live="polite"` en la zona de respuesta; objetivos táctiles ≥ 44 px; `prefers-reduced-motion` respeta animaciones
 - [x] Recargar conserva la conversación
 
 ## Notas
-- Reservar un espacio a la derecha del composer para el botón de voz de la fase 2 (no implementarlo).
+- ~~Reservar un espacio a la derecha del composer para el botón de voz de la fase 2 (no implementarlo).~~ **Vigente:** en ese espacio está el botón de dictado (`gpt-transcribe`); la voz conversacional con Vapi sigue en la fase 2.
