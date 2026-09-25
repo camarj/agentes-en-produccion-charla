@@ -1,7 +1,7 @@
 import type { ChatStatus, UIMessage } from "ai";
 import { ERRORES_CHAT, LARGO_MAXIMO_PREGUNTA, type MetadataMensaje } from "./chat";
 import { MENSAJE_GENERICO, pedir } from "./acceso";
-import { MENSAJES_BLOQUEO, mensajeDeBloqueo, motivoDeTripwire } from "@/src/mastra/processors/mensajes";
+import { MENSAJES_BLOQUEO, mensajeDeTripwire } from "@/src/mastra/processors/mensajes";
 
 // Lógica de la UI de chat (T11): textos, clasificación de errores de /api/chat,
 // agrupación de mensajes, indicadores y el cliente de las APIs auxiliares.
@@ -137,7 +137,7 @@ export function agruparMensajes(mensajes: MensajeChat[]): Grupo[] {
 export function textoVisible(partes: MensajeChat["parts"]): string {
   if (partes.some((p) => p.type === "data-guardrail")) return MENSAJES_BLOQUEO.datos_personales;
   const tripwire = partes.find((p) => p.type === "data-tripwire") as { data?: unknown } | undefined;
-  if (tripwire) return mensajeDeBloqueo(motivoDeTripwire(tripwire.data as { metadata?: unknown }));
+  if (tripwire) return mensajeDeTripwire(tripwire.data as { metadata?: unknown });
   return partes
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)

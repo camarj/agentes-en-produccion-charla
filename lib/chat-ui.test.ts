@@ -11,7 +11,7 @@ import {
   textoVisible,
   type MensajeChat,
 } from "./chat-ui";
-import { MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
+import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
 
 function errorApi(status: number, cuerpo: unknown) {
   const responseBody = typeof cuerpo === "string" ? cuerpo : JSON.stringify(cuerpo);
@@ -85,6 +85,9 @@ describe("textoVisible", () => {
   it("un bloqueo de entrada muestra el mensaje fijo de su motivo", () => {
     const partes = [{ type: "data-tripwire", data: { reason: "x", metadata: { motivo: "fuera_de_alcance" } } }];
     expect(textoVisible(partes as never)).toBe(MENSAJES_BLOQUEO.fuera_de_alcance);
+    // F04 (2026-09-25): salud muestra su propio mensaje fijo.
+    const salud = [{ type: "data-tripwire", data: { reason: "x", metadata: { motivo: "fuera_de_alcance", subtema: "salud" } } }];
+    expect(textoVisible(salud as never)).toBe(MENSAJE_SALUD);
   });
   it("un reemplazo de salida muestra solo el mensaje de datos personales", () => {
     const partes = [

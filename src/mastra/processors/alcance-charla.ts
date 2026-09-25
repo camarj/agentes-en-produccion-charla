@@ -4,7 +4,7 @@ import type { MastraModelConfig } from "@mastra/core/llm";
 import type { ProcessInputArgs, Processor } from "@mastra/core/processors";
 import { z } from "zod";
 import { MODELO_LIGERO, MODELO_LIGERO_RESPALDO, OPCIONES_PROVEEDOR_LIGERO } from "../modelos";
-import { MENSAJES_BLOQUEO, type MetadataBloqueo } from "./mensajes";
+import { SUBTEMA_SALUD, mensajeDeBloqueo, type MetadataBloqueo } from "./mensajes";
 import { registrarEnTraza } from "./traza-guardrail";
 
 // Modelos del clasificador: el ligero (OpenAI) y, si falla, el ligero de
@@ -25,12 +25,14 @@ export const TIEMPO_MAXIMO_CLASIFICADOR_MS = 3000;
 // alcance; el agente responde con amabilidad y SinDatosPersonales evita que
 // repita el perfil.
 // Incluye los temas de la charla: sin ellos, «¿Qué es un PRD?» se bloqueaba (Raúl, 2026-09-23).
+// 2026-09-25: «patrón agéntico» (lámina 19 nueva, decisión #15) y la categoría
+// salud, que bloquea con su propio mensaje (F04).
 export const PROMPT_CLASIFICADOR =
-  "Clasifica si el mensaje trata sobre la charla de agentes de IA en producción, sobre conceptos de IA, o sobre Raúl, Inteliside o críticas a la charla (escalable). La charla cubre: qué es un agente, la IA, los modelos y los LLM; el loop agéntico y el harness; contexto, control, ejecución y seguimiento; decidir si un proyecto necesita un agente; el PRD (documento de requerimientos de producto), las especificaciones y el contrato del agente; la arquitectura con uno o varios agentes; plataformas, código y marcos para implementar; resiliencia, salvaguardas (guardrails), evaluaciones (evals), observabilidad y el lanzamiento. Las preguntas sobre cualquiera de esos temas, aunque sean cortas o generales, son charla. Las preguntas sobre este asistente, cómo funciona o los datos y el perfil del propio usuario son charla. Consejos financieros, médicos, legales, política, recetas, tareas escolares y temas ajenos son fuera_de_alcance.";
+  "Clasifica si el mensaje trata sobre la charla de agentes de IA en producción, sobre conceptos de IA, o sobre Raúl, Inteliside o críticas a la charla (escalable). La charla cubre: qué es un agente, la IA, los modelos y los LLM; el loop agéntico y el harness; contexto, control, ejecución y seguimiento; decidir si un proyecto necesita un agente; qué es un patrón agéntico y los patrones agénticos (por ejemplo, router o varios agentes); el PRD (documento de requerimientos de producto), las especificaciones y el contrato del agente; la arquitectura con uno o varios agentes; plataformas, código y marcos para implementar; resiliencia, salvaguardas (guardrails), evaluaciones (evals), observabilidad y el lanzamiento. Las preguntas sobre cualquiera de esos temas, aunque sean cortas o generales, son charla. Las preguntas sobre este asistente, cómo funciona o los datos y el perfil del propio usuario son charla. Consejos financieros, legales, política, recetas, tareas escolares y temas ajenos son fuera_de_alcance. Los pedidos de consejo médico, sobre síntomas, medicamentos o urgencias de salud son salud; una pregunta sobre agentes de IA aplicados a la salud es charla.";
 
 export const esquemaClasificacion = z.object({
   categoria: z
-    .enum(["charla", "concepto_ia", "escalable", "fuera_de_alcance"])
+    .enum(["charla", "concepto_ia", "escalable", "fuera_de_alcance", "salud"])
     .describe("Categoría del mensaje"),
   confianza: z.number().min(0).max(1).describe("Confianza de la clasificación, entre 0 y 1"),
 });
@@ -158,10 +160,17 @@ export class AlcanceCharla implements Processor<"alcance-charla"> {
     }
 
     const { categoria, confianza } = r.valor;
-    if (categoria === "fuera_de_alcance" && confianza >= this.umbral) {
-      const metadata: MetadataBloqueo = { guardrail: "alcance_charla", motivo: "fuera_de_alcance", confianza, categoria };
+    // Salud se bloquea con el mismo motivo, pero con su propio mensaje fijo.
+    if ((categoria === "fuera_de_alcance" || categoria === "salud") && confianza >= this.umbral) {
+      const metadata: MetadataBloqueo = {
+        guardrail: "alcance_charla",
+        motivo: "fuera_de_alcance",
+        confianza,
+        categoria,
+        ...(categoria === "salud" ? { subtema: SUBTEMA_SALUD } : {}),
+      };
       registrarEnTraza(tracingContext, metadata);
-      abort(MENSAJES_BLOQUEO.fuera_de_alcance, { metadata });
+      abort(mensajeDeBloqueo(metadata.motivo, metadata), { metadata });
     }
     registrarEnTraza(tracingContext, { alcance_categoria: categoria, alcance_confianza: confianza });
     return messages;

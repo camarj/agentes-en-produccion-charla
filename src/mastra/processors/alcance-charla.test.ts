@@ -12,7 +12,7 @@ import {
   type Clasificador,
 } from "./alcance-charla";
 import { MODELO_LIGERO, MODELO_LIGERO_RESPALDO } from "../modelos";
-import { MENSAJES_BLOQUEO } from "./mensajes";
+import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "./mensajes";
 import { modeloFalso } from "./pruebas-modelo";
 
 function mensaje(role: "user" | "assistant", texto: string, id = Math.random().toString(36)) {
@@ -44,12 +44,30 @@ describe("AlcanceCharla (unidad)", () => {
   afterEach(() => vi.useRealTimers());
 
   // Prompt ampliado con los temas de la charla (Raúl, 2026-09-23): bloqueaba «¿Qué es un PRD?».
+  // 2026-09-25: «patrón agéntico» (lámina 19 nueva, decisión #15) y la categoría salud (F04).
   it("constantes: umbral 0,7, tope 3 s y prompt con los temas de la charla", () => {
     expect(UMBRAL_FUERA_DE_ALCANCE).toBe(0.7);
     expect(TIEMPO_MAXIMO_CLASIFICADOR_MS).toBe(3000);
     expect(PROMPT_CLASIFICADOR).toBe(
-      "Clasifica si el mensaje trata sobre la charla de agentes de IA en producción, sobre conceptos de IA, o sobre Raúl, Inteliside o críticas a la charla (escalable). La charla cubre: qué es un agente, la IA, los modelos y los LLM; el loop agéntico y el harness; contexto, control, ejecución y seguimiento; decidir si un proyecto necesita un agente; el PRD (documento de requerimientos de producto), las especificaciones y el contrato del agente; la arquitectura con uno o varios agentes; plataformas, código y marcos para implementar; resiliencia, salvaguardas (guardrails), evaluaciones (evals), observabilidad y el lanzamiento. Las preguntas sobre cualquiera de esos temas, aunque sean cortas o generales, son charla. Las preguntas sobre este asistente, cómo funciona o los datos y el perfil del propio usuario son charla. Consejos financieros, médicos, legales, política, recetas, tareas escolares y temas ajenos son fuera_de_alcance.",
+      "Clasifica si el mensaje trata sobre la charla de agentes de IA en producción, sobre conceptos de IA, o sobre Raúl, Inteliside o críticas a la charla (escalable). La charla cubre: qué es un agente, la IA, los modelos y los LLM; el loop agéntico y el harness; contexto, control, ejecución y seguimiento; decidir si un proyecto necesita un agente; qué es un patrón agéntico y los patrones agénticos (por ejemplo, router o varios agentes); el PRD (documento de requerimientos de producto), las especificaciones y el contrato del agente; la arquitectura con uno o varios agentes; plataformas, código y marcos para implementar; resiliencia, salvaguardas (guardrails), evaluaciones (evals), observabilidad y el lanzamiento. Las preguntas sobre cualquiera de esos temas, aunque sean cortas o generales, son charla. Las preguntas sobre este asistente, cómo funciona o los datos y el perfil del propio usuario son charla. Consejos financieros, legales, política, recetas, tareas escolares y temas ajenos son fuera_de_alcance. Los pedidos de consejo médico, sobre síntomas, medicamentos o urgencias de salud son salud; una pregunta sobre agentes de IA aplicados a la salud es charla.",
     );
+  });
+
+  it("bloquea salud con confianza ≥ 0,7: motivo fuera_de_alcance, subtema salud y su mensaje fijo", async () => {
+    const p = new AlcanceCharla({ clasificar: fijo({ categoria: "salud", confianza: 0.9 }) });
+    const { args, abort } = contexto([mensaje("user", "Me duele el pecho, ¿qué tomo?")]);
+    await expect(p.processInput(args)).rejects.toBeInstanceOf(Abortado);
+    expect(abort).toHaveBeenCalledWith(MENSAJE_SALUD, {
+      metadata: { guardrail: "alcance_charla", motivo: "fuera_de_alcance", confianza: 0.9, categoria: "salud", subtema: "salud" },
+    });
+  });
+
+  it("deja pasar salud con confianza < 0,7", async () => {
+    const p = new AlcanceCharla({ clasificar: fijo({ categoria: "salud", confianza: 0.5 }) });
+    const msgs = [mensaje("user", "¿Un agente para mi clínica?")];
+    const { args, abort } = contexto(msgs);
+    expect(await p.processInput(args)).toBe(msgs);
+    expect(abort).not.toHaveBeenCalled();
   });
 
   it("bloquea fuera_de_alcance con confianza ≥ 0,7 con el mensaje fijo y la metadata", async () => {

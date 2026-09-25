@@ -78,7 +78,7 @@ function bloqueo(
     motivo,
     guardrail,
     ...(confianza !== undefined ? { confianza } : {}),
-    mensaje: mensajeDeBloqueo(motivo),
+    mensaje: mensajeDeBloqueo(motivo, metadata),
     processorId,
     metadata: { ...metadata, guardrail, motivo, guardrails_entrada: "bloqueado", guardrails_entrada_ms: ms },
   };

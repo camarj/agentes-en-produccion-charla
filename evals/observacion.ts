@@ -1,5 +1,5 @@
 import type { UsoTokens } from "@/lib/presupuesto";
-import { MENSAJES_BLOQUEO, mensajeDeBloqueo, motivoDeTripwire, type MotivoBloqueo } from "@/src/mastra/processors/mensajes";
+import { MENSAJES_BLOQUEO, mensajeDeTripwire, motivoDeTripwire, type MotivoBloqueo } from "@/src/mastra/processors/mensajes";
 import { invocaciones } from "@/src/mastra/scorers/ejecucion";
 
 // Lo que el runner observó de un turno del agente, sin redactar. Los gates lo
@@ -78,7 +78,7 @@ export function observarResultado(casoId: string, r: ResultadoGenerate, duracion
   return {
     casoId,
     // Con un tripwire, el asistente ve el mensaje fijo (igual que la UI, T11).
-    texto: r.tripwire ? mensajeDeBloqueo(motivo) : texto,
+    texto: r.tripwire ? mensajeDeTripwire(r.tripwire) : texto,
     bloqueado: motivo !== null,
     motivo,
     herramientas,

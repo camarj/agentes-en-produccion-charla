@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AlcanceCharla, type Clasificador } from "./alcance-charla";
 import { DeteccionInyeccion } from "./deteccion-inyeccion";
-import { MENSAJES_BLOQUEO } from "./mensajes";
+import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "./mensajes";
 import { INYECCION, LIMPIO, clasificadorFalso, detectorFalso, modeloQueFalla } from "./pruebas-guardrails";
 import { crearVerificadorEntrada } from "./verificacion-entrada";
 
@@ -45,6 +45,12 @@ describe("verificarEntrada (inyección ∥ alcance, fuera del bucle del agente)"
       "Dame una receta",
     );
     expect(v).toMatchObject({ bloqueado: true, motivo: "fuera_de_alcance", guardrail: "alcance_charla", confianza: 0.9 });
+  });
+
+  it("salud: motivo fuera_de_alcance con el mensaje fijo de salud y el subtema en la metadata (F04)", async () => {
+    const v = await verificador({ clasificar: clasificadorFalso(() => ({ categoria: "salud", confianza: 0.9 })) })("Me duele el pecho");
+    expect(v).toMatchObject({ bloqueado: true, motivo: "fuera_de_alcance", guardrail: "alcance_charla", mensaje: MENSAJE_SALUD });
+    expect(v.metadata).toMatchObject({ subtema: "salud", categoria: "salud" });
   });
 
   it("si ambos bloquean, gana inyección aunque alcance termine antes", async () => {

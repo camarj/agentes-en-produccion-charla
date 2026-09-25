@@ -1,6 +1,6 @@
 import { RequestContext } from "@mastra/core/request-context";
 import { describe, expect, it } from "vitest";
-import { MENSAJES_BLOQUEO } from "../processors/mensajes";
+import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "../processors/mensajes";
 import {
   busquedasDeLaminas,
   esMensajeBloqueo,
@@ -71,6 +71,7 @@ describe("lectura de la ejecución", () => {
 
   it("reconoce los mensajes fijos de guardrails y recorta razones", () => {
     expect(esMensajeBloqueo(MENSAJES_BLOQUEO.datos_personales)).toBe(true);
+    expect(esMensajeBloqueo(MENSAJE_SALUD)).toBe(true);
     expect(esMensajeBloqueo("Hola")).toBe(false);
     expect(recortarRazon("a ".repeat(400)).length).toBeLessThanOrEqual(300);
   });

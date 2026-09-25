@@ -1,5 +1,5 @@
 import type { MastraDBMessage } from "@mastra/core/memory";
-import { MENSAJES_BLOQUEO } from "../processors/mensajes";
+import { TODOS_LOS_MENSAJES_BLOQUEO } from "../processors/mensajes";
 
 // Lectura de una ejecución del agente tal como la reciben los scorers en vivo
 // (@mastra/core 1.69, `type: 'agent'`):
@@ -125,7 +125,7 @@ export function valorContexto(requestContext: unknown, clave: string): string | 
   return t === "" ? null : t;
 }
 
-const TEXTOS_BLOQUEO = new Set(Object.values(MENSAJES_BLOQUEO));
+const TEXTOS_BLOQUEO = new Set(TODOS_LOS_MENSAJES_BLOQUEO);
 
 // La respuesta es uno de los mensajes fijos de los guardrails (T06).
 export function esMensajeBloqueo(texto: string): boolean {

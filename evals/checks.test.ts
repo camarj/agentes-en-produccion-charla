@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
+import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
 import { construirTerminos } from "@/src/mastra/processors/sin-datos-personales";
 import {
   evaluarBloqueo,
@@ -39,6 +39,10 @@ describe("evaluarBloqueo (gate)", () => {
     const r = evaluarBloqueo({ bloqueado: true, motivo_bloqueo: "fuera_de_alcance", criterios: ["x"] }, obs({ bloqueado: true, motivo: "fuera_de_alcance", texto: MENSAJES_BLOQUEO.fuera_de_alcance }));
     expect(r.score).toBe(1);
     expect(r.razon).toMatch(/fuera de alcance/);
+  });
+  it("acepta el mensaje fijo de salud como bloqueo fuera de alcance (F04)", () => {
+    const r = evaluarBloqueo({ bloqueado: true, motivo_bloqueo: "fuera_de_alcance", criterios: ["x"] }, obs({ bloqueado: true, motivo: "fuera_de_alcance", texto: MENSAJE_SALUD }));
+    expect(r.score).toBe(1);
   });
   it("acepta cualquiera de los motivos de la lista (S06)", () => {
     const r = evaluarBloqueo({ bloqueado: true, motivo_bloqueo: ["inyeccion", "fuera_de_alcance"], criterios: ["x"] }, obs({ bloqueado: true, motivo: "fuera_de_alcance", texto: MENSAJES_BLOQUEO.fuera_de_alcance }));

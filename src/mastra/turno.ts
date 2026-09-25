@@ -2,7 +2,7 @@ import { toAISdkStream } from "@mastra/ai-sdk";
 import type { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
 import { ChunkFrom, type ChunkType, type MastraModelOutput } from "@mastra/core/stream";
-import { MENSAJES_BLOQUEO, TIPO_PARTE_GUARDRAIL, mensajeDeBloqueo, motivoDeTripwire, type MotivoBloqueo } from "./processors/mensajes";
+import { MENSAJES_BLOQUEO, TIPO_PARTE_GUARDRAIL, mensajeDeTripwire, motivoDeTripwire, type MotivoBloqueo } from "./processors/mensajes";
 import {
   CLAVE_VEREDICTO,
   verificarEntrada as verificarPorDefecto,
@@ -227,7 +227,7 @@ export async function consumirTurno(turno: Pick<Turno, "fullStream">): Promise<R
   return {
     bloqueado: motivo !== null,
     motivo,
-    texto: tripwire ? mensajeDeBloqueo(motivo) : reemplazoSalida ? MENSAJES_BLOQUEO.datos_personales : texto,
+    texto: tripwire ? mensajeDeTripwire(tripwire) : reemplazoSalida ? MENSAJES_BLOQUEO.datos_personales : texto,
     herramientas,
     tripwire,
     reemplazoSalida,
