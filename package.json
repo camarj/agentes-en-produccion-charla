@@ -21,6 +21,7 @@
     "carga": "tsx scripts/carga.ts"
   },
   "dependencies": {
+    "@ai-sdk/google-vertex": "5.0.136",
     "@ai-sdk/react": "4.0.115",
     "@base-ui/react": "^1.8.0",
     "@libsql/client": "0.18.0",

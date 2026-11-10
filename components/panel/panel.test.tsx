@@ -27,7 +27,7 @@ function metricasBase(): MetricasPanel {
       bloqueos: { total: 4, por_motivo: { fuera_de_alcance: 3, inyeccion: 1 } },
       turnos: 20,
       respaldo: { ultima_hora: 3, ultima_en: "2026-09-26T17:58:00.000Z" },
-      modelo_en_uso: { estado: "principal", modelo: "gpt-6-luna", en: "2026-09-26T17:59:00.000Z" },
+      modelo_en_uso: { estado: "principal", modelo: "gemini-3.8-flash", en: "2026-09-26T17:59:00.000Z" },
     },
     actualizado_en: "2026-09-26T18:00:00.000Z",
     version: VERSION_APP,
@@ -123,8 +123,8 @@ describe("Panel del speaker", () => {
     expect(within(fallas).getByText("fallas de herramientas o modelos (12 h)")).toBeTruthy();
     expect(within(fallas).getByText("1 herramienta · 1 modelo · 2 tiempo agotado")).toBeTruthy();
     const modelo = metrica("Modelo en uso");
-    expect(within(modelo).getByText("gpt-6-luna")).toBeTruthy();
-    expect(within(modelo).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(modelo).getByText("gemini-3.8-flash")).toBeTruthy();
+    expect(within(modelo).getByText(/^última respuesta: gemini-3.8-flash a las \d{2}:\d{2}$/)).toBeTruthy();
     expect(within(modelo).getByText("respaldo: 3 en la última hora")).toBeTruthy();
     const bloqueos = metrica("Bloqueos de guardrails");
     expect(within(bloqueos).getByText("4")).toBeTruthy();
@@ -184,21 +184,21 @@ describe("Panel del speaker", () => {
     const valor = () => within(tarjeta()).getByTestId("modelo-en-uso");
 
     it("interruptores apagados: el principal en blanco, aunque la última respuesta fuera del respaldo", async () => {
-      obs().modelo_en_uso = { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T17:59:00.000Z" };
+      obs().modelo_en_uso = { estado: "respaldo", modelo: "openai/gpt-6-luna", en: "2026-09-26T17:59:00.000Z" };
       obs().respaldo = { ultima_hora: 1, ultima_en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       expect(valor().className).not.toMatch(/amber|red/);
-      expect(within(tarjeta()).getByText(/^última respuesta: claude-sonnet-5 a las \d{2}:\d{2}$/)).toBeTruthy();
+      expect(within(tarjeta()).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
       expect(within(tarjeta()).getByText("respaldo: 1 en la última hora")).toBeTruthy();
     });
 
-    it("«Modelo caído» encendido: «claude-sonnet-5 · respaldo» en ámbar antes de que nadie pregunte", async () => {
+    it("«Modelo caído» encendido: «gpt-6-luna · respaldo» en ámbar antes de que nadie pregunte", async () => {
       estadoInt.valores.modelo_caido = "on";
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna · respaldo"));
       expect(valor().className).toMatch(/amber/);
-      expect(within(tarjeta()).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+      expect(within(tarjeta()).getByText(/^última respuesta: gemini-3.8-flash a las \d{2}:\d{2}$/)).toBeTruthy();
     });
 
     it("«Modelos caídos» encendido: «Sin modelo · falla técnica» en rojo", async () => {
@@ -212,11 +212,11 @@ describe("Panel del speaker", () => {
     it("cambia apenas se toca el interruptor, sin esperar una respuesta del agente", async () => {
       const u = userEvent.setup();
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
-      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna · respaldo"));
       await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
     });
 
     it("sin turnos todavía o sin trazas: la última respuesta dice «—»", async () => {
@@ -227,7 +227,7 @@ describe("Panel del speaker", () => {
       metricas = metricasBase();
       metricas.observabilidad = { disponible: false };
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       expect(within(tarjeta()).getByText("última respuesta: —")).toBeTruthy();
     });
 

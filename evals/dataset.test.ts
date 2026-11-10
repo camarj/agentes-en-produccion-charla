@@ -37,6 +37,12 @@ describe("cargarDataset", () => {
     expect(datos.meta.notas).toMatch(/v1\.5\.0/);
   });
 
+  it("v1.6.0 (DevFest, PRD §15 G5): R03 espera el respaldo OpenAI gpt-6-luna", () => {
+    expect(datos.meta.version).toBe("1.6.0");
+    expect(caso("R03").esperado.modelo_esperado).toBe("openai/gpt-6-luna");
+    expect(datos.meta.notas).toMatch(/v1\.6\.0/);
+  });
+
   it("no queda la copia vieja del dataset en la raíz del repo", () => {
     expect(fs.existsSync(path.join(__dirname, "..", "charla-v1.json"))).toBe(false);
   });

@@ -53,8 +53,11 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 
 | Variable | Obligatoria | Servicio | Para qué | Valor |
 | --- | --- | --- | --- | --- |
-| `OPENAI_API_KEY` | sí | ambos | modelo principal (`openai/gpt-6-luna`), guardrails, jueces | de Raúl |
-| `ANTHROPIC_API_KEY` | sí | ambos | modelo de respaldo (`anthropic/claude-sonnet-5`) | de Raúl |
+| `GOOGLE_VERTEX_PROJECT` | sí (salvo modo express) | ambos | modelo principal Gemini `gemini-3.8-flash` en Vertex AI. Las credenciales salen de la cuenta de servicio del entorno (en Cloud Run, la del servicio, con rol «Usuario de Vertex AI») o de `GOOGLE_APPLICATION_CREDENTIALS` en local | ID del proyecto de Google Cloud |
+| `GOOGLE_VERTEX_LOCATION` | no | ambos | región de Vertex. Vacía = `global` (la más barata para Gemini 3.8 Flash) | `global` |
+| `GOOGLE_VERTEX_API_KEY` | no | ambos | alternativa a proyecto + cuenta de servicio: clave de Vertex en **modo express**. Si existe, se usa en lugar de las credenciales | de Raúl |
+| `OPENAI_API_KEY` | sí | ambos | modelo de respaldo (`openai/gpt-6-luna`), guardrails, jueces, dictado por voz | de Raúl |
+| `ANTHROPIC_API_KEY` | sí | ambos | respaldo de guardrails y jueces (`anthropic/claude-haiku-4-5`) | de Raúl |
 | `OBSERVABILIDAD_DATABASE_URL` | sí | ambos | trazas y feedback en Neon. **Conexión directa** (sin `-pooler`), `sslmode=require` | de Raúl |
 | `SESSION_SECRET` | sí | ambos (`studio` lo usa en el eval R04) | firma de la cookie de sesión, ≥ 16 caracteres | de Raúl (o uno nuevo de 32+ caracteres: invalida sesiones previas, no importa hoy) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | sí | `web` (**argumento de build** y variable de entorno) | entrar con Google: el navegador muestra el botón con este ID y el servidor verifica que la credencial se emitió para él. Sin él nadie puede entrar. No es secreto | ID de cliente OAuth «Aplicación web» de Google Cloud, con el dominio público en «Orígenes de JavaScript autorizados» |

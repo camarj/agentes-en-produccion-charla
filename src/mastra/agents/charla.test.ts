@@ -1,5 +1,5 @@
 import { RequestContext } from "@mastra/core/request-context";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
 import { FallbackModelo } from "../processors/fallback-modelo";
 import { GuardiaEntrada, ID_GUARDIA_ENTRADA } from "../processors/guardia-entrada";
@@ -16,15 +16,17 @@ describe("agente charla", () => {
     expect(mastra.getAgent("charla").id).toBe("charla");
   });
 
-  it("modelo principal con respaldo", async () => {
+  it("modelo principal (Gemini en Vertex) con respaldo (OpenAI)", async () => {
+    vi.stubEnv("GOOGLE_VERTEX_PROJECT", "proyecto-prueba");
     const lista = await charla.getModelList();
+    vi.unstubAllEnvs();
     expect(lista?.map((m) => ({ id: m.id, maxRetries: m.maxRetries }))).toEqual([
       { id: "principal", maxRetries: 1 },
       { id: "respaldo", maxRetries: 0 },
     ]);
     const modelos = await Promise.all(lista!.map(async (m) => {
       const r = m.model as { provider: string; modelId: string };
-      return `${r.provider}/${r.modelId}`;
+      return `${r.provider.startsWith("google.vertex") ? "google-vertex" : r.provider}/${r.modelId}`;
     }));
     expect(modelos).toEqual([MODELO_PRINCIPAL, MODELO_RESPALDO]);
   });

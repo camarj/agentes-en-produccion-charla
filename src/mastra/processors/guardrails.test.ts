@@ -8,6 +8,7 @@ import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
+import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { crearEscalarPregunta } from "../tools/escalar-pregunta";
@@ -171,8 +172,8 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   });
 
   it("con GuardiaEntrada delante, la caída simulada (modelo_caido) sigue pasando al respaldo", async () => {
-    const principal = modeloFalso("openai/gpt-6-luna", () => ({ texto: "desde openai" }));
-    const respaldo = modeloFalso("anthropic/claude-sonnet-5", () => ({ texto: "desde el respaldo" }));
+    const principal = modeloFalso(MODELO_PRINCIPAL, () => ({ texto: "desde el principal" }));
+    const respaldo = modeloFalso(MODELO_RESPALDO, () => ({ texto: "desde el respaldo" }));
     const g = guardia(detectorFalso(() => LIMPIO), clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })));
     const a = new Agent({
       id: "charla-prueba-caida",

@@ -161,10 +161,10 @@ describe("POST /api/identificar", () => {
     }
   });
 
-  it("más de 600 intentos por minuto desde la misma IP → 429 con Retry-After", async () => {
+  it("más de 2000 intentos por minuto desde la misma IP → 429 con Retry-After", async () => {
     const ip = ipNueva();
-    for (let i = 0; i < 600; i++) limitadorIdentificar.consumir(`identificar:${ip}`);
-    const { r, cuerpo } = await identificarCon("p600@e.com", ip);
+    for (let i = 0; i < 2000; i++) limitadorIdentificar.consumir(`identificar:${ip}`);
+    const { r, cuerpo } = await identificarCon("p2000@e.com", ip);
     expect(r.status).toBe(429);
     expect(cuerpo.error).toBe("demasiados_intentos");
     expect(cuerpo.mensaje).toMatch(/intent/i);

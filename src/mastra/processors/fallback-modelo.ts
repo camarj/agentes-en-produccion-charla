@@ -1,44 +1,67 @@
+import type { ModelWithRetries } from "@mastra/core/agent";
 import { SpanType } from "@mastra/core/observability";
 import type { ProcessInputStepArgs, ProcessInputStepResult, Processor } from "@mastra/core/processors";
 import { APICallError } from "ai";
 import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
-import { MODELO_PRINCIPAL, MODELO_RESPALDO, OPCIONES_PROVEEDOR_PRINCIPAL } from "../modelos";
+import {
+  MODELO_PRINCIPAL,
+  MODELO_RESPALDO,
+  modeloPrincipal,
+  OPCIONES_PROVEEDOR_PRINCIPAL,
+  OPCIONES_PROVEEDOR_RESPALDO,
+} from "../modelos";
 
 // Cadena de modelos del agente (fallback nativo de Mastra). Ante un error del
 // proveedor, Mastra reintenta el mismo modelo `maxRetries` veces (solo si el
 // error es reintentable: 5xx, 529, 408, 409, 429 o de red) y luego pasa al
-// siguiente modelo. Principal (OpenAI): 1 reintento; respaldo (Anthropic): 1 intento.
-export function modelosConRespaldo() {
+// siguiente modelo. Principal (Gemini en Vertex): 1 reintento; respaldo (OpenAI): 1 intento.
+export function modelosConRespaldo(): ModelWithRetries[] {
   return [
     {
       id: "principal",
-      model: MODELO_PRINCIPAL,
+      // Se crea en cada turno: el proveedor de Vertex exige el proyecto al
+      // crear el modelo, y la app (tests, Studio) debe arrancar sin él.
+      // El cast salva la diferencia de versión de @ai-sdk/provider entre
+      // @ai-sdk/google-vertex y @mastra/core (misma interfaz LanguageModelV4 en
+      // ejecución; lo prueba el test HTTP de este archivo).
+      model: (() => modeloPrincipal()) as unknown as ModelWithRetries["model"],
       maxRetries: 1,
-      // Solo aplica a OpenAI; el respaldo (Anthropic) no la recibe.
-      providerOptions: { openai: { ...OPCIONES_PROVEEDOR_PRINCIPAL.openai } },
+      providerOptions: { vertex: { thinkingConfig: { ...OPCIONES_PROVEEDOR_PRINCIPAL.vertex.thinkingConfig } } },
     },
-    { id: "respaldo", model: MODELO_RESPALDO, maxRetries: 0 },
+    {
+      id: "respaldo",
+      model: MODELO_RESPALDO,
+      maxRetries: 0,
+      providerOptions: { openai: { ...OPCIONES_PROVEEDOR_RESPALDO.openai } },
+    },
   ];
 }
 
+// «proveedor/modelo» comparable con MODELO_PRINCIPAL y MODELO_RESPALDO. El
+// proveedor de Vertex del AI SDK se llama «google.vertex.chat».
 function idModelo(model: { provider?: string; modelId?: string } | undefined): string {
-  return `${model?.provider ?? ""}/${model?.modelId ?? ""}`;
+  const proveedor = model?.provider ?? "";
+  return `${proveedor.startsWith("google.vertex") ? "google-vertex" : proveedor}/${model?.modelId ?? ""}`;
 }
 
 // Error de sobrecarga simulado con la forma del proveedor del modelo:
+// - Google (Vertex): 503 con `{"error":{"code":503,"status":"UNAVAILABLE"}}`;
 // - OpenAI: 503 con `{"error":{"type":"server_error"}}`;
 // - Anthropic: 529 con `{"type":"error","error":{"type":"overloaded_error"}}`.
-// Ambos son `APICallError` reintentables, como los reales.
+// Todos son `APICallError` reintentables, como los reales.
 export function crearErrorSobrecarga(modelo: string): APICallError {
+  const google = modelo.startsWith("google");
   const openai = modelo.startsWith("openai/");
-  const cuerpo = openai
-    ? { error: { message: "The server is overloaded", type: "server_error", param: null, code: null } }
-    : { type: "error", error: { type: "overloaded_error", message: "Overloaded" } };
+  const cuerpo = google
+    ? { error: { code: 503, message: "The model is overloaded. Please try again later.", status: "UNAVAILABLE" } }
+    : openai
+      ? { error: { message: "The server is overloaded", type: "server_error", param: null, code: null } }
+      : { type: "error", error: { type: "overloaded_error", message: "Overloaded" } };
   return new APICallError({
     message: "Overloaded (simulado por el interruptor modelo_caido)",
     url: `simulado://${modelo}`,
     requestBodyValues: {},
-    statusCode: openai ? 503 : 529,
+    statusCode: google || openai ? 503 : 529,
     responseBody: JSON.stringify(cuerpo),
     isRetryable: true,
   });
@@ -81,7 +104,7 @@ export function esErrorDeSobrecarga(error: unknown): boolean {
 }
 
 // Modelo (LanguageModelV2) con el mismo id que el principal que falla con un
-// error de sobrecarga (503 en OpenAI) sin llamar al proveedor. Como el error es reintentable, Mastra aplica su
+// error de sobrecarga (503) sin llamar al proveedor. Como el error es reintentable, Mastra aplica su
 // reintento y su cambio de modelo igual que con una caída real.
 export function crearModeloCaido(modelo: string) {
   const [provider, ...resto] = modelo.split("/");

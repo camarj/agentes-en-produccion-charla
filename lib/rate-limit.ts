@@ -36,7 +36,7 @@ export function crearLimitador({ limite, ventanaMs }: { limite: number; ventanaM
 // Entrada (DevFest 2026-12-05, cientos de personas tras la misma IP del Wi‑Fi):
 // el tope por IP solo frena inundaciones; el control real es por cuenta de
 // Google, porque cada intento exige una credencial firmada por Google.
-export const LIMITE_IDENTIFICAR_POR_MINUTO = 600;
+export const LIMITE_IDENTIFICAR_POR_MINUTO = 2000;
 export const limitadorIdentificar = crearLimitador({ limite: LIMITE_IDENTIFICAR_POR_MINUTO, ventanaMs: 60_000 });
 export const LIMITE_IDENTIFICAR_POR_CUENTA = 10;
 export const limitadorIdentificarCuenta = crearLimitador({ limite: LIMITE_IDENTIFICAR_POR_CUENTA, ventanaMs: 60_000 });

@@ -18,6 +18,9 @@ describe("/qr (ayuda para colaboradores)", () => {
     render(<PaginaQr />);
     expect(screen.getByRole("heading", { name: "Cómo entrar" })).toBeTruthy();
     expect(screen.getByText(new RegExp(MENSAJE_DEMASIADOS_INTENTOS))).toBeTruthy();
+    // DevFest (PRD §15 G1): se entra con la cuenta de Google, ya no escribiendo el email.
+    expect(screen.getByText(/Toca «Continuar con Google» y elige tu cuenta/)).toBeTruthy();
+    expect(screen.queryByText(/Escribe el email/)).toBeNull();
     expect(screen.getByText(new RegExp(ERRORES_CHAT.mantenimiento.split(".")[0]))).toBeTruthy();
     expect(screen.getByText(/Llegaste al límite de preguntas/)).toBeTruthy();
   });

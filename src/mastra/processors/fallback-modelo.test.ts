@@ -75,18 +75,26 @@ describe("esErrorDeSobrecarga", () => {
 });
 
 describe("crearErrorSobrecarga / crearModeloCaido", () => {
-  it("el principal es de OpenAI y su error simulado es un 503 server_error reintentable", () => {
-    expect(MODELO_PRINCIPAL.startsWith("openai/")).toBe(true);
+  it("el principal es Gemini en Vertex y su error simulado es un 503 UNAVAILABLE reintentable", () => {
+    expect(MODELO_PRINCIPAL).toBe("google-vertex/gemini-3.8-flash");
     const e = crearErrorSobrecarga(MODELO_PRINCIPAL);
     expect(APICallError.isInstance(e)).toBe(true);
     expect(e.statusCode).toBe(503);
     expect(e.isRetryable).toBe(true);
+    expect(JSON.parse(e.responseBody ?? "{}")).toMatchObject({ error: { code: 503, status: "UNAVAILABLE" } });
+    expect(esErrorDeSobrecarga(e)).toBe(true);
+  });
+
+  it("el respaldo es de OpenAI y su error simulado es un 503 server_error reintentable", () => {
+    expect(MODELO_RESPALDO).toBe("openai/gpt-6-luna");
+    const e = crearErrorSobrecarga(MODELO_RESPALDO);
+    expect(e.statusCode).toBe(503);
     expect(JSON.parse(e.responseBody ?? "{}")).toMatchObject({ error: { type: "server_error" } });
     expect(esErrorDeSobrecarga(e)).toBe(true);
   });
 
-  it("para un modelo de Anthropic el error simulado es un 529 overloaded_error reintentable", () => {
-    const e = crearErrorSobrecarga(MODELO_RESPALDO);
+  it("para un modelo de Anthropic el error simulado sigue siendo un 529 overloaded_error reintentable", () => {
+    const e = crearErrorSobrecarga("anthropic/claude-sonnet-5");
     expect(e.statusCode).toBe(529);
     expect(e.isRetryable).toBe(true);
     expect(e.responseBody).toContain("overloaded_error");
@@ -102,19 +110,41 @@ describe("crearErrorSobrecarga / crearModeloCaido", () => {
 });
 
 describe("modelosConRespaldo", () => {
-  it("principal OpenAI con 1 reintento y respaldo Anthropic sin reintentos", () => {
-    expect(MODELO_PRINCIPAL).toBe("openai/gpt-6-luna");
-    expect(MODELO_RESPALDO).toBe("anthropic/claude-sonnet-5");
-    expect(modelosConRespaldo()).toEqual([
-      {
-        id: "principal",
-        model: MODELO_PRINCIPAL,
-        maxRetries: 1,
-        // Razonamiento bajo en OpenAI: ~2x menos tiempo al primer token (medido en vivo).
-        providerOptions: { openai: { reasoningEffort: "low" } },
-      },
-      { id: "respaldo", model: MODELO_RESPALDO, maxRetries: 0 },
-    ]);
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("crear la cadena no exige credenciales de Vertex (la app arranca sin ellas)", () => {
+    vi.stubEnv("GOOGLE_VERTEX_PROJECT", "");
+    vi.stubEnv("GOOGLE_VERTEX_API_KEY", "");
+    expect(() => modelosConRespaldo()).not.toThrow();
+  });
+
+  it("principal Gemini 3.8 Flash en Vertex (razonamiento bajo, 1 reintento) y respaldo OpenAI sin reintentos", () => {
+    vi.stubEnv("GOOGLE_VERTEX_PROJECT", "proyecto-prueba");
+    const [principal, respaldo] = modelosConRespaldo();
+    expect(principal).toMatchObject({
+      id: "principal",
+      maxRetries: 1,
+      providerOptions: { vertex: { thinkingConfig: { thinkingLevel: "low" } } },
+    });
+    const modelo = (principal.model as unknown as () => { provider: string; modelId: string })();
+    expect(modelo.provider).toMatch(/^google\.vertex/);
+    expect(modelo.modelId).toBe("gemini-3.8-flash");
+    expect(respaldo).toEqual({
+      id: "respaldo",
+      model: MODELO_RESPALDO,
+      maxRetries: 0,
+      providerOptions: { openai: { reasoningEffort: "low" } },
+    });
+  });
+
+  it("el modelo real de Vertex se reconoce como el principal (modelo caído aplica)", async () => {
+    vi.stubEnv("GOOGLE_VERTEX_PROJECT", "proyecto-prueba");
+    const p = new FallbackModelo({ interruptores: interruptores("on") });
+    const { span } = spanFalso();
+    const real = (modelosConRespaldo()[0].model as unknown as () => unknown)();
+    const r = await p.processInputStep({ model: real, tracingContext: { currentSpan: span } } as never);
+    expect(r).toBeDefined();
+    expect(span.update).toHaveBeenCalledWith({ metadata: { modelo_caido_simulado: true } });
   });
 });
 
@@ -247,14 +277,22 @@ describe("FallbackModelo con un agente real (fallback nativo de Mastra)", () => 
   }, 15_000);
 });
 
-// Nivel HTTP: el model router real de Mastra con fetch simulado (sin red ni clave real).
-// OpenAI (principal) usa la Responses API; Anthropic (respaldo) la Messages API.
-describe("FallbackModelo con el model router real y HTTP simulado", () => {
+// Nivel HTTP: proveedores reales (Vertex del AI SDK y model router de Mastra)
+// con fetch simulado (sin red ni clave real). Gemini (principal) usa
+// generateContent de Vertex en modo express; OpenAI (respaldo) la Responses API.
+describe("FallbackModelo con proveedores reales y HTTP simulado", () => {
   const llamadas: string[] = [];
   const cuerpos: Array<Record<string, unknown>> = [];
 
   function json(cuerpo: unknown, status = 200) {
     return new Response(JSON.stringify(cuerpo), { status, headers: { "content-type": "application/json" } });
+  }
+
+  function respuestaGemini(texto: string) {
+    return json({
+      candidates: [{ content: { role: "model", parts: [{ text: texto }] }, finishReason: "STOP" }],
+      usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+    });
   }
 
   function respuestaOpenAI(modelo: string, texto: string) {
@@ -277,39 +315,29 @@ describe("FallbackModelo con el model router real y HTTP simulado", () => {
     });
   }
 
-  function respuestaAnthropic(modelo: string, texto: string) {
-    return json({
-      id: "msg_prueba",
-      type: "message",
-      role: "assistant",
-      model: modelo,
-      content: [{ type: "text", text: texto }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 1 },
-    });
+  // Sobrecarga de Vertex: 503 UNAVAILABLE.
+  function sobrecargaGemini() {
+    return json({ error: { code: 503, message: "The model is overloaded.", status: "UNAVAILABLE" } }, 503);
   }
 
-  // Sobrecarga de OpenAI: 503 con `server_error`.
-  function sobrecargaOpenAI() {
-    return json({ error: { message: "The server is overloaded", type: "server_error", param: null, code: null } }, 503);
-  }
-
-  function agenteRouter(estado: string, principalCaido: boolean) {
+  function agenteHttp(estado: string, principalCaido: boolean) {
     llamadas.length = 0;
     cuerpos.length = 0;
+    vi.stubEnv("GOOGLE_VERTEX_API_KEY", "clave-prueba");
     vi.stubEnv("OPENAI_API_KEY", "sk-prueba");
-    vi.stubEnv("ANTHROPIC_API_KEY", "sk-prueba");
-    vi.stubGlobal("fetch", async (_url: unknown, init: { body: string }) => {
-      const cuerpo = JSON.parse(init.body) as { model: string };
-      const { model } = cuerpo;
-      llamadas.push(model);
+    vi.stubGlobal("fetch", async (url: unknown, init: { body: string }) => {
+      const cuerpo = JSON.parse(init.body) as { model?: string };
       cuerpos.push(cuerpo);
-      if (model === "gpt-6-luna") return principalCaido ? sobrecargaOpenAI() : respuestaOpenAI(model, "openai");
-      return respuestaAnthropic(model, "anthropic");
+      if (String(url).includes("gemini-3.8-flash")) {
+        llamadas.push("gemini-3.8-flash");
+        return principalCaido ? sobrecargaGemini() : respuestaGemini("gemini");
+      }
+      llamadas.push(cuerpo.model ?? "?");
+      return respuestaOpenAI(cuerpo.model ?? "?", "openai");
     });
     return new Agent({
-      id: "prueba-router",
-      name: "prueba-router",
+      id: "prueba-http",
+      name: "prueba-http",
       instructions: "x",
       model: modelosConRespaldo(),
       inputProcessors: [new FallbackModelo({ interruptores: interruptores(estado) })],
@@ -321,23 +349,23 @@ describe("FallbackModelo con el model router real y HTTP simulado", () => {
     vi.unstubAllEnvs();
   });
 
-  it("503 de OpenAI: 1 reintento con gpt-6-luna y luego claude-sonnet-5", async () => {
-    const r = await agenteRouter("off", true).generate("hola");
-    expect(llamadas).toEqual(["gpt-6-luna", "gpt-6-luna", "claude-sonnet-5"]);
-    expect(r.text).toBe("anthropic");
+  it("503 de Gemini: 1 reintento con gemini-3.8-flash y luego gpt-6-luna", async () => {
+    const r = await agenteHttp("off", true).generate("hola");
+    expect(llamadas).toEqual(["gemini-3.8-flash", "gemini-3.8-flash", "gpt-6-luna"]);
+    expect(r.text).toBe("openai");
   }, 15_000);
 
-  it("modelo_caido=on: OpenAI nunca recibe la petición y responde claude-sonnet-5", async () => {
-    const r = await agenteRouter("on", false).generate("hola");
-    expect(llamadas).toEqual(["claude-sonnet-5"]);
-    expect(r.text).toBe("anthropic");
-  }, 15_000);
-
-  it("sin fallas responde gpt-6-luna en un solo intento", async () => {
-    const r = await agenteRouter("off", false).generate("hola");
+  it("modelo_caido=on: Gemini nunca recibe la petición y responde gpt-6-luna con razonamiento bajo", async () => {
+    const r = await agenteHttp("on", false).generate("hola");
     expect(llamadas).toEqual(["gpt-6-luna"]);
     expect(r.text).toBe("openai");
-    // El esfuerzo de razonamiento llega en la petición real a la Responses API.
     expect(cuerpos[0]).toMatchObject({ reasoning: { effort: "low" } });
+  }, 15_000);
+
+  it("sin fallas responde gemini-3.8-flash en un solo intento, con razonamiento bajo", async () => {
+    const r = await agenteHttp("off", false).generate("hola");
+    expect(llamadas).toEqual(["gemini-3.8-flash"]);
+    expect(r.text).toBe("gemini");
+    expect(cuerpos[0]).toMatchObject({ generationConfig: { thinkingConfig: { thinkingLevel: "low" } } });
   });
 });
