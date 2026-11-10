@@ -133,6 +133,10 @@ describe("POST /api/transcribir", () => {
     expect((await r.json()).error).toBe("demasiados_dictados");
     const b = await preparar();
     expect((await transcribir(peticion(b.cookie))).status).toBe(200);
+    await vi.waitFor(async () => {
+      const ev = await db.cliente.execute("SELECT tipo FROM eventos_salud");
+      expect(ev.rows.map((f) => f.tipo)).toEqual(["limite_dictado"]);
+    });
   });
 
   it("éxito: transcribe en español con el formato del audio, devuelve { texto } y suma el coste por duración", async () => {

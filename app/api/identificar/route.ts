@@ -4,6 +4,7 @@ import { asistentes, type Asistente } from "@/lib/db/asistentes";
 import { sesiones } from "@/lib/db/sesiones";
 import { verificarCredencialGoogle, type IdentidadGoogle } from "@/lib/google";
 import { ipDe, limitadorIdentificar, limitadorIdentificarCuenta } from "@/lib/rate-limit";
+import { anotarEvento } from "@/lib/salud/registro";
 import { errorInterno, leerJson, respuestaError } from "@/lib/respuestas";
 import { establecerCookieSesion, estadoDe, nombrePila } from "@/lib/session";
 
@@ -39,7 +40,10 @@ async function buscarOCrear(identidad: IdentidadGoogle): Promise<Asistente> {
 // Nunca devuelve rol, descripción ni email.
 export async function POST(request: NextRequest) {
   const limite = limitadorIdentificar.consumir(`identificar:${ipDe(request)}`);
-  if (!limite.permitido) return demasiadosIntentos(limite.reintentarEnS);
+  if (!limite.permitido) {
+    anotarEvento("limite_entrada");
+    return demasiadosIntentos(limite.reintentarEnS);
+  }
 
   const datos = esquema.safeParse(await leerJson(request));
   if (!datos.success) return respuestaError(401, "credencial_invalida", MENSAJE_CREDENCIAL);
@@ -49,7 +53,10 @@ export async function POST(request: NextRequest) {
     if (!identidad) return respuestaError(401, "credencial_invalida", MENSAJE_CREDENCIAL);
 
     const porCuenta = limitadorIdentificarCuenta.consumir(`cuenta:${identidad.cuenta}`);
-    if (!porCuenta.permitido) return demasiadosIntentos(porCuenta.reintentarEnS);
+    if (!porCuenta.permitido) {
+      anotarEvento("limite_entrada");
+      return demasiadosIntentos(porCuenta.reintentarEnS);
+    }
 
     const asistente = await buscarOCrear(identidad);
     const sesion = await sesiones.reemplazar(asistente.id);

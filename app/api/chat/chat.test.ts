@@ -159,6 +159,14 @@ const textoDe = (partes: Parte[]) =>
 
 const turnoMock = vi.mocked(ejecutarTurno);
 
+// Tipos de los eventos de salud anotados (semáforos del panel).
+async function tiposDeEventos(esperados: string[]) {
+  await vi.waitFor(async () => {
+    const r = await db.cliente.execute("SELECT tipo FROM eventos_salud ORDER BY id");
+    expect(r.rows.map((f) => f.tipo)).toEqual(esperados);
+  }, { timeout: 5000 });
+}
+
 // Filas de `turnos` (métricas del panel, PRD §15 G7) cuando ya se escribieron.
 async function filasTurnos(n = 1) {
   let filas: Record<string, unknown>[] = [];
@@ -269,6 +277,11 @@ describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {
     const r2 = await chat(peticionChat(otro.cookie, mensajesUI("hola")));
     expect(r2.status).toBe(200);
     await r2.text();
+    // El freno queda en el semáforo «Entrada y límites».
+    await vi.waitFor(async () => {
+      const r3 = await db.cliente.execute("SELECT tipo FROM eventos_salud WHERE servicio = 'entrada'");
+      expect(r3.rows.map((f) => f.tipo)).toEqual(["limite_chat"]);
+    }, { timeout: 5000 });
   });
 
   it("mensaje 31 del mismo asistente → 429 tope (MAX_MENSAJES_ASISTENTE), sumando todas sus sesiones", async () => {
@@ -306,6 +319,7 @@ describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {
     expect(turnoMock).not.toHaveBeenCalled();
     interruptores.limpiarCache();
     expect((await interruptores.obtenerTodos()).kill_switch).toBe("on");
+    await tiposDeEventos(["presupuesto_agotado"]);
   });
 
   it("sin PRESUPUESTO_MAX_USD no hay tope de coste", async () => {
@@ -436,6 +450,7 @@ describe("POST /api/chat: turno", () => {
       });
     }, { timeout: 5000 });
     expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "modelo", duracion_ms: null, modelo: null });
+    await tiposDeEventos(["modelos_caidos"]);
   });
 
   it("si el turno ni siquiera arranca → mensaje fijo y escalamiento falla_tecnica", async () => {
@@ -451,6 +466,19 @@ describe("POST /api/chat: turno", () => {
       expect(lista.map((e) => [e.asistenteId, e.pregunta, e.motivo])).toEqual([[asistente.id, "¿Qué es un eval?", "falla_tecnica"]]);
     }, { timeout: 5000 });
     expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "otro", trace_id: null });
+  });
+
+  it("falla cerrada del detector de inyección → evento rojo de guardrails con el trace id", async () => {
+    estado.verificar = vi.fn<VerificarEntrada>(async () => ({
+      ...BLOQUEADO,
+      motivo: "inyeccion",
+      metadata: { guardrail: "deteccion_inyeccion", motivo: "inyeccion", falla_detector: true, guardrails_entrada: "bloqueado" },
+    }));
+    const { cookie } = await preparar();
+    await (await chat(peticionChat(cookie, mensajesUI("hola")))).text();
+    await tiposDeEventos(["detector_falla_cerrada"]);
+    const r = await db.cliente.execute("SELECT trace_id FROM eventos_salud");
+    expect(r.rows[0].trace_id).toBe("traza-prueba-1");
   });
 
   it("no escribe emails ni nombres en los logs", async () => {

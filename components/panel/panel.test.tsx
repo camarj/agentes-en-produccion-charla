@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EstadoInterruptores, FilaEscalamiento, MetricasPanel } from "@/lib/panel/tipos";
+import type { SaludPanel } from "@/lib/salud/catalogo";
 import { TRAMOS } from "@/lib/tramos";
 import { CLAVE_RECARGA, VERSION_APP } from "@/lib/version-app";
 import { Panel } from "./panel";
@@ -41,6 +42,22 @@ function interruptoresBase(): EstadoInterruptores {
   };
 }
 
+function saludBase(): SaludPanel {
+  return {
+    servicios: [
+      { id: "gemini", nombre: "Gemini (principal)", semaforo: "ambar", detalle: "Gemini: límite de uso (429) → respondió OpenAI" },
+      { id: "openai", nombre: "OpenAI (respaldo)", semaforo: "verde", detalle: "En espera o respondiendo" },
+      { id: "busqueda", nombre: "Búsqueda de láminas", semaforo: "rojo", detalle: "buscar_laminas agotó 3 intentos" },
+    ],
+    eventos: [
+      { id: 3, hora: "2026-12-05T19:44:00.000Z", nivel: "ok", texto: "Gemini se recuperó", trace_id: null },
+      { id: 2, hora: "2026-12-05T19:43:05.000Z", nivel: "falla", texto: "buscar_laminas agotó 3 intentos", trace_id: "t-busqueda" },
+      { id: 1, hora: "2026-12-05T19:42:31.000Z", nivel: "aviso", texto: "Gemini: límite de uso (429) → respondió OpenAI ×12 en 1 min", trace_id: "t-429" },
+    ],
+  };
+}
+
+let salud: SaludPanel | null;
 let metricas: MetricasPanel;
 let estadoInt: EstadoInterruptores;
 let cola: FilaEscalamiento[];
@@ -49,6 +66,7 @@ const posts: Array<{ url: string; metodo: string; cuerpo: unknown }> = [];
 
 beforeEach(() => {
   metricas = metricasBase();
+  salud = saludBase();
   estadoInt = interruptoresBase();
   cola = [
     { id: 3, pregunta: "¿Qué pasó con [redactado]?", motivo: "falla_tecnica", rol_anonimo: "tecnico", estado: "pendiente", creado_en: "2026-09-26T17:50:00Z" },
@@ -71,6 +89,7 @@ beforeEach(() => {
     if (url === "/api/panel/metricas") return json(metricas);
     if (url === "/api/panel/interruptores") return json(estadoInt);
     if (url === "/api/panel/escalamientos") return json({ escalamientos: cola });
+    if (url === "/api/panel/salud") return salud ? json(salud) : json({ error: "error_interno" }, 500);
     return json({}, 404);
   });
   vi.stubGlobal("fetch", fetchSimulado);
@@ -153,6 +172,43 @@ describe("Panel del speaker", () => {
     expect(within(metrica("Modelo en uso")).getByText("última respuesta: —")).toBeTruthy();
     expect(screen.getByText(/Métricas de turnos no disponibles por ahora/)).toBeTruthy();
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
+  });
+
+  it("salud del sistema: un semáforo por servicio y el registro en vivo con enlace «ver traza» a Studio", async () => {
+    await montar();
+    const seccion = await screen.findByRole("region", { name: "Salud del sistema" });
+    const gemini = within(seccion).getByRole("listitem", { name: /Gemini \(principal\)/ });
+    expect(gemini.getAttribute("aria-label")).toBe("Gemini (principal): ámbar");
+    expect(within(gemini).getByText("Gemini: límite de uso (429) → respondió OpenAI")).toBeTruthy();
+    expect(within(seccion).getByRole("listitem", { name: "Búsqueda de láminas: rojo" })).toBeTruthy();
+    expect(within(seccion).getByRole("listitem", { name: "OpenAI (respaldo): verde" })).toBeTruthy();
+
+    const registro = within(seccion).getByRole("list", { name: "Registro de eventos" });
+    const lineas = within(registro).getAllByRole("listitem");
+    expect(lineas.map((l) => l.querySelector("[data-texto]")?.textContent)).toEqual([
+      "Gemini se recuperó",
+      "buscar_laminas agotó 3 intentos",
+      "Gemini: límite de uso (429) → respondió OpenAI ×12 en 1 min",
+    ]);
+    expect(within(lineas[0]).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(lineas[0]).queryByRole("link")).toBeNull();
+    const enlace = within(lineas[2]).getByRole("link", { name: "ver traza" });
+    expect(enlace.getAttribute("href")).toBe("https://studio.ejemplo.com/traces?traceId=t-429");
+    expect(enlace.getAttribute("target")).toBe("_blank");
+  });
+
+  it("sin STUDIO_URL el registro se ve igual pero sin «ver traza»", async () => {
+    await montar(null);
+    const seccion = await screen.findByRole("region", { name: "Salud del sistema" });
+    expect(within(seccion).getByText("buscar_laminas agotó 3 intentos", { selector: "[data-texto]" })).toBeTruthy();
+    expect(within(seccion).queryByRole("link", { name: "ver traza" })).toBeNull();
+  });
+
+  it("si la salud no responde, el resto del panel sigue al día", async () => {
+    salud = null;
+    await montar();
+    expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
+    expect(screen.queryByText("Sin conexión con el servidor · reintentando")).toBeNull();
   });
 
   it("se actualiza cada 5 s sin recargar", async () => {

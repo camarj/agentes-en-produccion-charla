@@ -18,6 +18,7 @@ import { sesiones } from "@/lib/db/sesiones";
 import { costeEstimadoTurno, presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
 import { limitadorChat } from "@/lib/rate-limit";
 import { filaDeTurno } from "@/lib/salud/fin-turno";
+import { anotarEvento, anotarEventosDeTurno, eventosDeTurno } from "@/lib/salud/registro";
 import { crearSenales, type SenalesTurno } from "@/lib/salud/senales";
 import { errorInterno, leerJson, noAutenticado, respuestaError } from "@/lib/respuestas";
 import { construirContextoTurno } from "@/lib/contexto-turno";
@@ -78,7 +79,16 @@ async function cerrarTurno(turno: Turno, iniciadoMs: number, senales: SenalesTur
     abortado: externa.aborted,
     traceId: turno.traceId ?? null,
   });
-  const [coste, registro] = await Promise.allSettled([presupuesto.sumar(costeEstimadoTurno(modelo, uso)), turnos.registrar(fila)]);
+  const veredicto = await conTope(turno.veredicto, 0).catch(() => undefined);
+  const meta = veredicto?.metadata as Record<string, unknown> | undefined;
+  // Falla cerrada del detector de inyección (no cuenta si el cliente se fue).
+  const detectorFallo = meta?.falla_detector === true && meta.cancelado !== true;
+  const eventos = eventosDeTurno({ fila, senales, detectorFallo });
+  const [coste, registro] = await Promise.allSettled([
+    presupuesto.sumar(costeEstimadoTurno(modelo, uso)),
+    turnos.registrar(fila),
+    anotarEventosDeTurno(eventos, fila.traceId),
+  ]);
   if (coste.status === "rejected") registrarError("no se pudo sumar el coste", coste.reason);
   if (registro.status === "rejected") registrarError("no se pudo registrar el turno", registro.reason);
 }
@@ -95,6 +105,7 @@ function registrarTurnoSinArrancar(iniciadoMs: number, error: unknown) {
     traceId: null,
   });
   turnos.registrar(fila).catch((e: unknown) => registrarError("no se pudo registrar el turno", e));
+  void anotarEventosDeTurno(eventosDeTurno({ fila, senales: {}, detectorFallo: false }), null);
 }
 
 // POST /api/chat — cuerpo de useChat (`{ messages: UIMessage[] }`); se usa solo
@@ -113,6 +124,7 @@ export async function POST(request: NextRequest) {
     if (!pregunta) return respuestaError(400, "mensaje_invalido", ERRORES_CHAT.mensaje_invalido);
     const limite = limitadorChat.consumir(asistente.id);
     if (!limite.permitido) {
+      anotarEvento("limite_chat");
       return respuestaError(429, "demasiados_mensajes", ERRORES_CHAT.demasiados_mensajes, {
         "Retry-After": String(limite.reintentarEnS),
       });
@@ -125,6 +137,7 @@ export async function POST(request: NextRequest) {
     const tope = presupuestoMaximoUsd();
     if (tope !== null && (await presupuesto.acumulado()) >= tope) {
       await interruptores.actualizar("kill_switch", "on");
+      anotarEvento("presupuesto_agotado");
       return mantenimiento();
     }
 

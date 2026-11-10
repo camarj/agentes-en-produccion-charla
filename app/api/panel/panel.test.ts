@@ -12,10 +12,14 @@ import { peticion } from "@/lib/prueba-api";
 import { GET as getEscalamientos, PATCH as patchEscalamientos } from "./escalamientos/route";
 import { GET as getInterruptores, POST as postInterruptores } from "./interruptores/route";
 import { GET as getMetricas } from "./metricas/route";
+import { GET as getSalud } from "./salud/route";
+import { crearEventosSalud } from "@/lib/db/eventos-salud";
 
 const estado = vi.hoisted(() => ({
   fuente: null as null | (() => Promise<unknown>),
 }));
+const sondear = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/salud/observabilidad", () => ({ sondearObservabilidad: sondear }));
 vi.mock("@/lib/db/client", async (original) => ({
   ...(await original<typeof import("@/lib/db/client")>()),
   db: (() => estado.fuente!()) as FuenteDb,
@@ -154,6 +158,41 @@ describe("GET /api/panel/metricas", () => {
     expect(r.status).toBe(500);
     expect((await r.json()).error).toBe("error_interno");
     error.mockRestore();
+  });
+});
+
+describe("GET /api/panel/salud", () => {
+  const salud = (cabeceras = AUTH) => getSalud(peticion("/api/panel/salud", { cabeceras }));
+
+  it("401 sin la contraseña del panel", async () => {
+    expect((await salud({})).status).toBe(401);
+    expect((await salud(MAL)).status).toBe(401);
+  });
+
+  it("semáforos por servicio y registro en vivo, más nuevo primero, con trace id; sondea la observabilidad", async () => {
+    const eventos = crearEventosSalud(db.fuente);
+    await eventos.registrar("gemini_sobrecarga", { traceId: "t-1", ahora: Date.now() - 2000 });
+    await eventos.registrar("busqueda_agotada", { traceId: "t-2", ahora: Date.now() - 1000 });
+    await db.cliente.execute("UPDATE presupuesto SET coste_usd = 8 WHERE id = 1");
+    const r = await salud();
+    expect(r.status).toBe(200);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+    const cuerpo = await r.json();
+    expect(Object.fromEntries(cuerpo.servicios.map((x: { id: string; semaforo: string }) => [x.id, x.semaforo]))).toEqual({
+      gemini: "ambar",
+      openai: "verde",
+      base_datos: "verde",
+      trazas: "verde",
+      busqueda: "rojo",
+      guardrails: "verde",
+      entrada: "verde",
+      presupuesto: "ambar",
+    });
+    expect(cuerpo.eventos.map((e: { texto: string; trace_id: string; nivel: string }) => [e.texto, e.trace_id, e.nivel])).toEqual([
+      ["buscar_laminas agotó 3 intentos", "t-2", "falla"],
+      ["Gemini respondió 503 → respondió OpenAI", "t-1", "aviso"],
+    ]);
+    expect(sondear).toHaveBeenCalled();
   });
 });
 

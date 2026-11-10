@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { anotarEvento } from "@/lib/salud/registro";
 
 // Errores de las rutas: `{ error: codigo, mensaje }`, con mensaje en español
 // para el asistente. Nunca llevan detalles técnicos.
@@ -16,6 +17,8 @@ export function errorInterno(ruta: string, error: unknown) {
   const tipo = error instanceof Error ? error.name : typeof error;
   const codigo = (error as { code?: unknown } | null)?.code;
   console.error(`[${ruta}] error interno`, { tipo, ...(typeof codigo === "string" ? { codigo } : {}) });
+  // Semáforo «Base de datos» del panel (PRD §15 G7): una ruta respondió 500.
+  anotarEvento("db_error");
   return respuestaError(500, "error_interno", "Algo salió mal. Intenta de nuevo en un momento.");
 }
 

@@ -10,3 +10,11 @@ export function urlStudio(valor: string | undefined): string | null {
     return null;
   }
 }
+
+// Enlace «ver traza» del registro de eventos: la vista de trazas de Studio
+// filtrada por ese trace id. null si no hay Studio o la línea no tiene traza.
+export function urlTrazaStudio(studioUrl: string | null, traceId: string | null): string | null {
+  if (!studioUrl || !traceId) return null;
+  const base = studioUrl.endsWith("/") ? studioUrl : `${studioUrl}/`;
+  return `${base}traces?traceId=${encodeURIComponent(traceId)}`;
+}

@@ -3,6 +3,7 @@ import { ERRORES_CHAT } from "@/lib/chat";
 import { interruptores } from "@/lib/db/interruptores";
 import { costeTranscripcion, presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
 import { limitadorTranscribir } from "@/lib/rate-limit";
+import { anotarEvento } from "@/lib/salud/registro";
 import { errorInterno, noAutenticado, respuestaError } from "@/lib/respuestas";
 import { estadoDe, leerSesion } from "@/lib/session";
 import { TAMANO_MAXIMO_AUDIO, formatoDeAudio } from "@/lib/transcripcion";
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
 
     const limite = limitadorTranscribir.consumir(asistente.id);
     if (!limite.permitido) {
+      anotarEvento("limite_dictado");
       return respuestaError(429, "demasiados_dictados", ERRORES_TRANSCRIBIR.demasiados_dictados, {
         "Retry-After": String(limite.reintentarEnS),
       });

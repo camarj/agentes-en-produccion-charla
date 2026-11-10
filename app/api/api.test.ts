@@ -171,6 +171,10 @@ describe("POST /api/identificar", () => {
     expect(r.headers.get("retry-after")).toBeTruthy();
     // Otra IP sigue pudiendo entrar.
     expect((await identificarCon("otra@e.com")).r.status).toBe(200);
+    await vi.waitFor(async () => {
+      const ev = await db.cliente.execute("SELECT tipo, servicio FROM eventos_salud");
+      expect(ev.rows.map((f) => [f.tipo, f.servicio])).toEqual([["limite_entrada", "entrada"]]);
+    });
   });
 
   it("la misma cuenta de Google más de 10 veces por minuto → 429", async () => {
@@ -180,6 +184,10 @@ describe("POST /api/identificar", () => {
     expect(cuerpo.error).toBe("demasiados_intentos");
     // Otra cuenta no se ve afectada.
     expect((await identificarCon("tranquila@e.com")).r.status).toBe(200);
+    await vi.waitFor(async () => {
+      const ev = await db.cliente.execute("SELECT tipo FROM eventos_salud");
+      expect(ev.rows.map((f) => f.tipo)).toEqual(["limite_entrada"]);
+    });
   });
 
   it("error interno → 500 genérico sin detalles técnicos", async () => {
@@ -369,6 +377,19 @@ describe("POST /api/feedback", () => {
     });
     // Sin datos personales en el feedback de observabilidad.
     expect(JSON.stringify(estado.addFeedback.mock.calls)).not.toMatch(/fb@e\.com/);
+  });
+
+  it("si la observabilidad no guarda el voto, el voto vale igual y queda un aviso en «Trazas / observabilidad»", async () => {
+    const espia = vi.spyOn(console, "error").mockImplementation(() => {});
+    estado.addFeedback.mockRejectedValueOnce(new Error("relation does not exist"));
+    const { cookie } = await identificarCon("obs@e.com");
+    const r = await votar(cookie, { trace_id: "t-obs", valor: 1 });
+    expect(r.status).toBe(200);
+    await vi.waitFor(async () => {
+      const ev = await db.cliente.execute("SELECT tipo, nivel, trace_id FROM eventos_salud");
+      expect(ev.rows.map((f) => [f.tipo, f.nivel, f.trace_id])).toEqual([["traza_no_guardada", "aviso", "t-obs"]]);
+    });
+    espia.mockRestore();
   });
 
   it("un voto repetido en la misma traza reemplaza el anterior (queda solo el último)", async () => {
