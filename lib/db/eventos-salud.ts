@@ -50,7 +50,7 @@ export function crearEventosSalud(fuente: FuenteDb = db) {
     });
   }
 
-  // Un evento «ok» (p. ej. «Gemini se recuperó») solo si el último evento de
+  // Un evento «ok» (p. ej. «Gemini responde de nuevo») solo si el último evento de
   // ese servicio en la ventana fue un aviso o una falla.
   async function registrarRecuperacion(tipo: TipoEvento, { traceId = null, ahora = Date.now() }: Opciones = {}): Promise<void> {
     const c = await fuente();

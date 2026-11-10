@@ -36,8 +36,8 @@ describe("eventos de salud (semáforos y registro en vivo del panel)", () => {
     await eventos.registrar("gemini_limite_uso", { traceId: "t-nuevo", ahora: T0 + 2 * MIN });
     const s = await eventos.salud({ ahora: T0 + 2 * MIN, presupuesto: { acumuladoUsd: 0, maximoUsd: null } });
     expect(s.eventos.map((e) => [e.texto, e.trace_id, e.nivel])).toEqual([
-      ["Gemini: límite de uso (429) → respondió OpenAI", "t-nuevo", "aviso"],
-      ["Gemini: límite de uso (429) → respondió OpenAI ×12 en 1 min", "t-11", "aviso"],
+      ["Límite de uso del proyecto alcanzado (429) → respaldo activo", "t-nuevo", "aviso"],
+      ["Límite de uso del proyecto alcanzado (429) → respaldo activo ×12 en 1 min", "t-11", "aviso"],
     ]);
     expect(s.eventos[1].hora).toBe(new Date(T0 + 44 * SEG).toISOString());
   });
@@ -68,8 +68,8 @@ describe("eventos de salud (semáforos y registro en vivo del panel)", () => {
     await eventos.registrarRecuperacion("gemini_recuperado", { ahora: T0 + 3 * MIN });
     const s = await eventos.salud({ ahora: T0 + 3 * MIN, presupuesto: { acumuladoUsd: 0, maximoUsd: null } });
     expect(s.eventos.map((e) => [e.texto, e.nivel])).toEqual([
-      ["Gemini se recuperó", "ok"],
-      ["Gemini respondió 503 → respondió OpenAI", "aviso"],
+      ["Gemini responde de nuevo", "ok"],
+      ["Gemini con alta demanda (503) → respaldo activo", "aviso"],
     ]);
     expect(semaforos(s).gemini).toBe("verde");
   });
