@@ -151,7 +151,7 @@ describe("Panel del speaker", () => {
     }
     // «Modelo en uso» sale de los interruptores: no depende de las trazas.
     expect(within(metrica("Modelo en uso")).getByText("última respuesta: —")).toBeTruthy();
-    expect(screen.getByText(/Trazas no disponibles por ahora/)).toBeTruthy();
+    expect(screen.getByText(/Métricas de turnos no disponibles por ahora/)).toBeTruthy();
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
   });
 

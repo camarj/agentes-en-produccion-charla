@@ -64,7 +64,7 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
           <Metricas datos={metricas} valores={interruptores?.valores ?? null} />
           {!metricas.observabilidad.disponible ? (
             <p className="-mt-2 text-base text-muted-foreground">
-              Trazas no disponibles por ahora (Mastra se está conectando). Las demás métricas están al día.
+              Métricas de turnos no disponibles por ahora. Las demás métricas están al día.
             </p>
           ) : null}
         </>

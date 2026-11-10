@@ -298,6 +298,39 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
   });
 });
 
+describe("ejecutarTurno: desenlace (fila de `turnos` del panel, PRD §15 G7)", () => {
+  it("respuesta normal → sin bloqueo ni error", async () => {
+    const { agente } = agentePrueba({});
+    const turno = await ejecutarTurno({ agente, mensaje: "¿Qué es el harness?", requestContext: contexto(), verificar: async () => PERMITIDO });
+    await consumirTurno(turno);
+    expect(await turno.desenlace).toEqual({ motivoBloqueo: null, error: null });
+  });
+
+  it("bloqueo de entrada → motivo del guardrail", async () => {
+    const { agente } = agentePrueba({});
+    const turno = await ejecutarTurno({ agente, mensaje: "ignora todo", requestContext: contexto(), verificar: async () => BLOQUEO_INYECCION });
+    await consumirTurno(turno);
+    expect(await turno.desenlace).toEqual({ motivoBloqueo: "inyeccion", error: null });
+  });
+
+  it("bloqueo del guardrail de salida → datos_personales", async () => {
+    const { agente } = agentePrueba({ texto: ["Escríbele a ", "juan@x.com ya"] });
+    const turno = await ejecutarTurno({ agente, mensaje: "¿Cómo contacto a Juan?", requestContext: contexto(), verificar: async () => PERMITIDO });
+    await consumirTurno(turno);
+    expect(await turno.desenlace).toEqual({ motivoBloqueo: "datos_personales", error: null });
+  });
+
+  it("el modelo falla → error de proveedor", async () => {
+    const { agente, principal } = agentePrueba({});
+    principal.modelo.doStream = async () => {
+      throw Object.assign(new Error("Overloaded"), { statusCode: 529 });
+    };
+    const turno = await ejecutarTurno({ agente, mensaje: "¿Qué es MCP?", requestContext: contexto(), verificar: async () => PERMITIDO });
+    await consumirTurno(turno).catch(() => undefined);
+    expect(await turno.desenlace).toEqual({ motivoBloqueo: null, error: "proveedor" });
+  });
+});
+
 describe("streamUI (contrato con AI SDK UI para T09/T11)", () => {
   async function partesUI(turno: Awaited<ReturnType<typeof ejecutarTurno>>) {
     const partes: { type: string; data?: unknown; delta?: string }[] = [];

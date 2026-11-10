@@ -2,6 +2,7 @@ import type { ModelWithRetries } from "@mastra/core/agent";
 import { SpanType } from "@mastra/core/observability";
 import type { ProcessInputStepArgs, ProcessInputStepResult, Processor } from "@mastra/core/processors";
 import { APICallError } from "ai";
+import { senalesDe, type CausaRespaldo } from "@/lib/salud/senales";
 import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
 import {
   MODELO_PRINCIPAL,
@@ -152,26 +153,32 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
     this.respaldo = opciones.respaldo ?? MODELO_RESPALDO;
   }
 
-  private async caos(): Promise<{ principal: boolean; ambos: boolean }> {
+  private async caos(): Promise<{ principal: boolean; ambos: boolean; causa: CausaRespaldo | null }> {
     try {
       const v = await this.interruptores.obtenerTodos();
       const ambos = v.modelos_caidos === "on";
-      return { principal: ambos || v.modelo_caido === "on", ambos };
+      const sobrecarga = ambos || v.modelo_caido === "on";
+      return { principal: sobrecarga, ambos, causa: sobrecarga ? "sobrecarga" : null };
     } catch {
-      return { principal: false, ambos: false }; // si no se pueden leer, se asumen apagados
+      return { principal: false, ambos: false, causa: null }; // si no se pueden leer, se asumen apagados
     }
   }
 
-  async processInputStep({ model, tracingContext }: ProcessInputStepArgs): Promise<ProcessInputStepResult | undefined> {
+  async processInputStep({ model, tracingContext, requestContext }: ProcessInputStepArgs): Promise<ProcessInputStepResult | undefined> {
     const span = tracingContext?.currentSpan as SpanMinimo | undefined;
     const actual = idModelo(model);
+    // Señales del turno para el panel (PRD §15 G7); undefined fuera de la ruta de chat.
+    const senales = senalesDe(requestContext);
 
     if (actual === this.respaldo) {
+      const caos = await this.caos();
       // «Modelos caídos»: el respaldo también falla (nadie puede responder).
-      if ((await this.caos()).ambos) {
+      if (caos.ambos) {
         span?.update({ metadata: { modelos_caidos_simulado: true } });
+        if (senales) senales.modelosCaidosSimulado = true;
         return { model: crearModeloCaido(this.respaldo) as unknown as ProcessInputStepResult["model"] };
       }
+      if (senales) senales.respaldo = { modelo: actual, causa: caos.causa };
       const marca = { metadata: { modelo_respaldo: true, modelo_usado: actual } };
       span?.update(marca);
       span?.findParent?.(SpanType.AGENT_RUN)?.update(marca);

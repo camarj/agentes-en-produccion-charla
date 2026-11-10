@@ -15,11 +15,11 @@ describe("migraciones", () => {
       "SELECT name FROM sqlite_master WHERE type IN ('table') ORDER BY name",
     );
     const nombres = tablas.rows.map((r) => r.name);
-    for (const t of ["asistentes", "sesiones", "escalamientos", "interruptores", "eventos_interruptor", "laminas", "laminas_fts", "feedback", "_migraciones"]) {
+    for (const t of ["asistentes", "sesiones", "escalamientos", "interruptores", "eventos_interruptor", "laminas", "laminas_fts", "feedback", "turnos", "_migraciones"]) {
       expect(nombres).toContain(t);
     }
     const aplicadas = await db.cliente.execute("SELECT nombre FROM _migraciones");
-    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_init.sql", "002_feedback.sql", "003_presupuesto.sql", "004_modelos_caidos.sql", "005_jev.sql", "006_sesion_unica.sql"]);
+    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_init.sql", "002_feedback.sql", "003_presupuesto.sql", "004_modelos_caidos.sql", "005_jev.sql", "006_sesion_unica.sql", "007_turnos.sql"]);
   });
 
   it("activa foreign_keys y WAL al abrir", async () => {

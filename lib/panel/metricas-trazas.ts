@@ -1,7 +1,9 @@
-// Métricas del panel del speaker (T12) que salen de la observabilidad de
-// Mastra: latencia, errores y bloqueos de guardrails. Se leen con la API del
-// store (`listTracesLight`), así funcionan igual con Postgres (Neon) y LibSQL.
-// Si el store no está listo o no responde, el panel muestra «—»: nunca lanza.
+// Métricas del panel del speaker (T12) a partir de las trazas de Mastra:
+// latencia, errores y bloqueos de guardrails. Desde PRD §15 G7 el panel ya no
+// lee las trazas (usa la tabla `turnos`, lib/db/turnos.ts); aquí quedan el
+// tipo `MetricasTrazas` que comparten, y los clasificadores de fallas y
+// bloqueos que usa Jev (lib/jev/turnos.ts). El lector (`leerMetricasTrazas`)
+// sirve para comparar a mano con las trazas.
 // Las trazas del runner de evals (T13, `metadata.origen = "eval"`) no cuentan.
 
 import { esTrazaDeEval } from "@/lib/origen-eval";

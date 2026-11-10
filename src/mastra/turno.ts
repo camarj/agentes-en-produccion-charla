@@ -1,7 +1,9 @@
 import { toAISdkStream } from "@mastra/ai-sdk";
 import type { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
+import { APICallError } from "ai";
 import { ChunkFrom, type ChunkType, type MastraModelOutput } from "@mastra/core/stream";
+import { esErrorDeSobrecarga } from "./processors/fallback-modelo";
 import { MENSAJES_BLOQUEO, TIPO_PARTE_GUARDRAIL, mensajeDeTripwire, motivoDeTripwire, type MotivoBloqueo } from "./processors/mensajes";
 import {
   CLAVE_VEREDICTO,
@@ -54,6 +56,23 @@ export interface Turno {
   // enviar su texto ni su stream al cliente: no pasan por la retención.
   salidaAgente: MastraModelOutput;
   metricas: MetricasTurno;
+  // Cómo terminó (para la fila de `turnos` del panel). Se resuelve junto con
+  // `fin` (y el veredicto); nunca rechaza.
+  desenlace: Promise<DesenlaceTurno>;
+}
+
+export interface DesenlaceTurno {
+  // Bloqueo de entrada (veredicto) o de salida (tripwire o reemplazo de SinDatosPersonales).
+  motivoBloqueo: MotivoBloqueo | null;
+  // El stream del agente terminó con error: «proveedor» si fue un error de la
+  // API de un modelo (5xx, 429, sobrecarga); «otro» si no (cancelación, tiempo, bug).
+  error: TipoErrorTurno | null;
+}
+
+export type TipoErrorTurno = "proveedor" | "otro";
+
+export function tipoDeError(error: unknown): TipoErrorTurno {
+  return APICallError.isInstance(error) || esErrorDeSobrecarga(error) ? "proveedor" : "otro";
 }
 
 // Tiempos en ms desde el inicio del turno (para trazas, panel y mediciones).
@@ -112,6 +131,8 @@ export async function ejecutarTurno(opciones: OpcionesTurno): Promise<Turno> {
   const retenidos: ChunkType[] = [];
   let fuenteTerminada = false;
   let errorFuente: unknown;
+  let errorAgente: unknown;
+  let motivoSalida: MotivoBloqueo | null = null;
   let cerrado = false;
   let controlador!: ReadableStreamDefaultController<ChunkType>;
 
@@ -146,6 +167,9 @@ export async function ejecutarTurno(opciones: OpcionesTurno): Promise<Turno> {
         const { done, value } = await lector.read();
         if (done) break;
         if (value.type === "text-delta" && metricas.primerTextoAgenteMs === undefined) metricas.primerTextoAgenteMs = ahora();
+        if (value.type === "error") errorAgente ??= (value.payload as { error?: unknown } | undefined)?.error ?? value;
+        else if (value.type === "tripwire") motivoSalida ??= motivoDeTripwire(value.payload as Parameters<typeof motivoDeTripwire>[0]);
+        else if ((value.type as string) === TIPO_PARTE_GUARDRAIL) motivoSalida ??= "datos_personales";
         if (estado === "permitido" && !cerrado) entregar(value);
         else if (estado === "pendiente") retenidos.push(value);
         // bloqueado o cancelado: se descarta (el agente se está deteniendo)
@@ -176,9 +200,18 @@ export async function ejecutarTurno(opciones: OpcionesTurno): Promise<Turno> {
     if (fuenteTerminada) cerrar();
   });
 
+  const desenlace = fin.then(async (): Promise<DesenlaceTurno> => {
+    const v = await veredicto.catch(() => null);
+    if (v?.bloqueado) return { motivoBloqueo: v.motivo, error: null };
+    if (motivoSalida) return { motivoBloqueo: motivoSalida, error: null };
+    const error = errorAgente ?? errorFuente;
+    return { motivoBloqueo: null, error: error === undefined ? null : tipoDeError(error) };
+  });
+
   return {
     fullStream,
     veredicto,
+    desenlace,
     runId: salida.runId,
     traceId: salida.traceId,
     senal,

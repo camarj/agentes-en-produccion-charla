@@ -29,7 +29,7 @@ Branch: `feat/devfest-acceso-google-gemini` (continues after 4299f50) · Deliver
 
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| T1 | S1 | delegated (context backstop) | pending | |
+| T1 | S1 | delegated (context backstop) | done | RED: `lib/db/turnos.test.ts` (module missing), `turno.test.ts` desenlace ×4, `fin-turno.test.ts`, chat/panel/reiniciar tests failing → GREEN: 100 files / 1030 tests, lint and tsc clean. Commit: see L5 |
 | T2 | S2, S3 | delegated (context backstop) | pending | |
 | T3 | S4 | delegated (context backstop) | pending | |
 | T4 | S5 | delegated (context backstop) | pending | |
@@ -41,3 +41,4 @@ Route evidence: the parent session passed ~150k context tokens (long-session bac
 - L1 (2026-11-10, user, verbatim): "Esto tambien hay que corregirlo y ver que otra cosa se puede mostrar en el panel del speaker como alertas en rate limits, del modelo de db u otro servicio que afecte al agente. Lo que quiero es que si falla algo sea parte del demo y se pueda capturar y que muetre la observabilidad y la resiliencia"
 - L2 (2026-11-10, user, verbatim): "si apruebo, agrega los dos interruptores si" — approves the design (DB-backed metrics, traffic lights, event log with trace link) and both switches.
 - L3: Context. Primary model is `google-vertex/gemini-3.8-flash` (fallback `openai/gpt-6-luna`); chaos is applied in `src/mastra/processors/fallback-modelo.ts` (`crearErrorSobrecarga`, `crearModeloCaido`). Guardrail signals already in trace metadata: `alcance_falla_abierta`, `falla_detector`; tool signal `falla_herramienta`. Rate limiters in `lib/rate-limit.ts`; DB errors surface through `errorInterno(ruta, error)` in `lib/respuestas.ts`; feedback→observability failures in `app/api/feedback/route.ts`; budget in `lib/presupuesto.ts`. Stage 3 will move `charla.db` to Cloud SQL Postgres: keep new SQL portable (no SQLite-only functions where avoidable).
+- L4 (2026-11-10, writer): T1 done. New table `turnos` (migration 007, epoch-ms integers, portable SQL); the chat route writes one row when each turn closes (`lib/salud/fin-turno.ts` + per-turn signals in the requestContext from FallbackModelo and buscar_laminas); `/api/panel/metricas` reads `turnos.resumen()` (SQL aggregates, percentiles via ORDER BY … LIMIT 1 OFFSET k, no cap). `lib/panel/observabilidad.ts` removed; trace classifiers stay for Jev. `pnpm reiniciar:charla` also clears `turnos`. Eval traffic stays out because evals never write through the production route DB.

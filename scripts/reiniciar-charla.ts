@@ -10,7 +10,7 @@ import { abrirBaseMigrada, ejecutarCli } from "./comun";
 // en Studio como material de la charla.
 //
 // Borra: sesiones, votos, escalamientos, análisis de Jev, historial de los
-// interruptores, asistentes «invitado» (se vuelven a crear al identificarse),
+// interruptores, turnos de chat del panel, asistentes «invitado» (se vuelven a crear al identificarse),
 // conversaciones del agente (hilos `charla-*`) y las trazas de asistentes
 // (entidad `charla`) con sus puntajes y votos en observabilidad.
 // Reinicia: coste acumulado a 0, interruptores apagados y tramo en la lámina 1.
@@ -43,6 +43,8 @@ export interface ResultadoCharlaDb {
   escalamientos: number;
   analisisJev: number;
   eventosInterruptor: number;
+  // Turnos de chat de las métricas del panel (PRD §15 G7).
+  turnos: number;
   invitados: number;
   costeUsd: number;
   interruptoresCambiados: number;
@@ -55,6 +57,7 @@ async function contarCharlaDb(c: Client): Promise<ResultadoCharlaDb> {
     (SELECT count(*) FROM escalamientos) AS escalamientos,
     (SELECT count(*) FROM jev_analisis) AS analisis_jev,
     (SELECT count(*) FROM eventos_interruptor) AS eventos,
+    (SELECT count(*) FROM turnos) AS turnos,
     (SELECT count(*) FROM asistentes WHERE origen = 'invitado') AS invitados,
     (SELECT coalesce(max(coste_usd), 0) FROM presupuesto) AS coste`);
   const f = r.rows[0];
@@ -68,6 +71,7 @@ async function contarCharlaDb(c: Client): Promise<ResultadoCharlaDb> {
     escalamientos: numero(f.escalamientos),
     analisisJev: numero(f.analisis_jev),
     eventosInterruptor: numero(f.eventos),
+    turnos: numero(f.turnos),
     invitados: numero(f.invitados),
     costeUsd: numero(f.coste),
     interruptoresCambiados: cambiados,
@@ -86,6 +90,7 @@ export async function reiniciarCharlaDb(fuente: FuenteDb, { aplicar }: { aplicar
       "DELETE FROM sesiones",
       "DELETE FROM jev_analisis",
       "DELETE FROM eventos_interruptor",
+      "DELETE FROM turnos",
       "DELETE FROM asistentes WHERE origen = 'invitado'",
       "UPDATE presupuesto SET coste_usd = 0, actualizado_en = datetime('now') WHERE id = 1",
       ...Object.entries(VALORES_INICIALES).map(([clave, valor]) => ({
@@ -272,7 +277,7 @@ async function principal() {
     const r = await reiniciarCharlaDb(async () => cliente, { aplicar });
     console.log(
       `  charla.db: ${r.sesiones} sesiones, ${r.votos} votos, ${r.escalamientos} escalamientos, ${r.analisisJev} análisis de Jev, ` +
-        `${r.eventosInterruptor} eventos de interruptores, ${r.invitados} invitados, coste $${r.costeUsd.toFixed(4)}, ` +
+        `${r.eventosInterruptor} eventos de interruptores, ${r.turnos} turnos, ${r.invitados} invitados, coste $${r.costeUsd.toFixed(4)}, ` +
         `${r.interruptoresCambiados} interruptores fuera de su valor inicial`,
     );
   } finally {

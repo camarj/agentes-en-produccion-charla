@@ -12,16 +12,19 @@ import {
   type MetadataMensaje,
 } from "@/lib/chat";
 import { escalamientos } from "@/lib/db/escalamientos";
+import { turnos } from "@/lib/db/turnos";
 import { interruptores } from "@/lib/db/interruptores";
 import { sesiones } from "@/lib/db/sesiones";
 import { costeEstimadoTurno, presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
 import { limitadorChat } from "@/lib/rate-limit";
+import { filaDeTurno } from "@/lib/salud/fin-turno";
+import { crearSenales, type SenalesTurno } from "@/lib/salud/senales";
 import { errorInterno, leerJson, noAutenticado, respuestaError } from "@/lib/respuestas";
 import { construirContextoTurno } from "@/lib/contexto-turno";
 import { estadoDe, leerSesion } from "@/lib/session";
 import { mastra } from "@/src/mastra";
 import { VERSION_INSTRUCCIONES } from "@/src/mastra/agents/instructions";
-import { ejecutarTurno, streamUI, type Turno } from "@/src/mastra/turno";
+import { ejecutarTurno, streamUI, tipoDeError, type Turno } from "@/src/mastra/turno";
 
 const ESPERA_MAXIMA_USO_MS = 5000;
 // Un turno bloqueado a mitad de una llamada a herramienta puede no cerrar nunca
@@ -48,9 +51,13 @@ function conTope<T>(promesa: Promise<T>, ms: number): Promise<T | undefined> {
   return Promise.race([promesa, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms).unref?.())]);
 }
 
-// Cuando el agente termina (memoria guardada), suma el coste estimado.
-async function registrarCoste(turno: Turno) {
-  await conTope(turno.fin, ESPERA_MAXIMA_FIN_MS);
+// Cuando el agente termina (memoria guardada): suma el coste estimado y deja
+// la fila del turno para las métricas del panel (PRD §15 G7). Una falla en una
+// de las dos escrituras no impide la otra.
+// `externa`: tope de 45 s o cliente que se fue (no la cancelación interna del turno).
+async function cerrarTurno(turno: Turno, iniciadoMs: number, senales: SenalesTurno, externa: AbortSignal) {
+  const termino = await conTope(turno.fin.then(() => true), ESPERA_MAXIMA_FIN_MS);
+  const finMs = termino ? Date.now() : null;
   let modelo: string | undefined;
   let uso: Awaited<Turno["salidaAgente"]["usage"]> | undefined;
   try {
@@ -61,7 +68,33 @@ async function registrarCoste(turno: Turno) {
   } catch {
     // Turno fallido o cancelado: queda el costo fijo de guardrails y jueces.
   }
-  await presupuesto.sumar(costeEstimadoTurno(modelo, uso));
+  const desenlace = termino ? await turno.desenlace : null;
+  const fila = filaDeTurno({
+    iniciadoMs,
+    finMs,
+    desenlace,
+    senales,
+    modeloRespuesta: modelo ?? null,
+    abortado: externa.aborted,
+    traceId: turno.traceId ?? null,
+  });
+  const [coste, registro] = await Promise.allSettled([presupuesto.sumar(costeEstimadoTurno(modelo, uso)), turnos.registrar(fila)]);
+  if (coste.status === "rejected") registrarError("no se pudo sumar el coste", coste.reason);
+  if (registro.status === "rejected") registrarError("no se pudo registrar el turno", registro.reason);
+}
+
+// El turno ni siquiera arrancó: también cuenta como turno con falla.
+function registrarTurnoSinArrancar(iniciadoMs: number, error: unknown) {
+  const fila = filaDeTurno({
+    iniciadoMs,
+    finMs: Date.now(),
+    desenlace: { motivoBloqueo: null, error: tipoDeError(error) },
+    senales: {},
+    modeloRespuesta: null,
+    abortado: false,
+    traceId: null,
+  });
+  turnos.registrar(fila).catch((e: unknown) => registrarError("no se pudo registrar el turno", e));
 }
 
 // POST /api/chat — cuerpo de useChat (`{ messages: UIMessage[] }`); se usa solo
@@ -97,12 +130,15 @@ export async function POST(request: NextRequest) {
 
     // Se cancela si el cliente se va o si el turno pasa de 45 s.
     const abortSignal = AbortSignal.any([request.signal, AbortSignal.timeout(TIEMPO_MAXIMO_TURNO_MS)]);
+    const requestContext = construirContextoTurno(asistente, valores, VERSION_INSTRUCCIONES);
+    const senales = crearSenales(requestContext);
+    const iniciadoMs = Date.now();
     let turno: Turno;
     try {
       turno = await ejecutarTurno({
         agente: mastra.getAgent("charla"),
         mensaje: pregunta,
-        requestContext: construirContextoTurno(asistente, valores, VERSION_INSTRUCCIONES),
+        requestContext,
         // Un hilo por asistente (`charla-<id>`), compartido por sus dispositivos.
         memory: { thread: sesion.threadId, resource: asistente.id },
         abortSignal,
@@ -111,6 +147,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       registrarError("el turno no pudo arrancar", error);
       escalarFalla(asistente.id, pregunta, undefined);
+      registrarTurnoSinArrancar(iniciadoMs, error);
       return createUIMessageStreamResponse({ stream: streamFallaTecnica() });
     }
 
@@ -127,7 +164,7 @@ export async function POST(request: NextRequest) {
         escalarFalla(asistente.id, pregunta, turno.traceId);
       },
     });
-    registrarCoste(turno).catch((error: unknown) => registrarError("no se pudo sumar el coste", error));
+    cerrarTurno(turno, iniciadoMs, senales, abortSignal).catch((error: unknown) => registrarError("no se pudo cerrar el turno", error));
     return createUIMessageStreamResponse({ stream });
   } catch (error) {
     return errorInterno("chat", error);

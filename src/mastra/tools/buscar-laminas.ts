@@ -2,6 +2,7 @@ import { SpanType } from "@mastra/core/observability";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
+import { senalesDe } from "@/lib/salud/senales";
 import { laminas as laminasPorDefecto, type ResultadoBusqueda } from "@/lib/db/laminas";
 import { spanActual } from "./contexto";
 import {
@@ -97,6 +98,14 @@ export function crearBuscarLaminas(deps: DependenciasBuscarLaminas) {
           ...(fallo ? { falla_herramienta: true } : {}),
         },
       });
+      // Señales del turno para el panel (PRD §15 G7): la peor búsqueda del turno.
+      const senales = senalesDe(contexto?.requestContext);
+      if (senales) {
+        senales.busqueda = {
+          intentos: Math.max(senales.busqueda?.intentos ?? 0, intentos),
+          agotada: (senales.busqueda?.agotada ?? false) || fallo,
+        };
+      }
       // En la raíz del turno, para que el panel cuente la falla aunque el agente responda.
       if (fallo) span?.findParent?.(SpanType.AGENT_RUN)?.update({ metadata: { falla_herramienta: true } });
       return salida;

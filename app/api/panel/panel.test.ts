@@ -7,7 +7,7 @@ import { crearFeedback } from "@/lib/db/feedback";
 import { interruptores } from "@/lib/db/interruptores";
 import { crearDbTemporal } from "@/lib/db/prueba";
 import { crearSesiones } from "@/lib/db/sesiones";
-import type { MetricasTrazas } from "@/lib/panel/metricas-trazas";
+import { crearTurnos, turnos } from "@/lib/db/turnos";
 import { peticion } from "@/lib/prueba-api";
 import { GET as getEscalamientos, PATCH as patchEscalamientos } from "./escalamientos/route";
 import { GET as getInterruptores, POST as postInterruptores } from "./interruptores/route";
@@ -15,13 +15,11 @@ import { GET as getMetricas } from "./metricas/route";
 
 const estado = vi.hoisted(() => ({
   fuente: null as null | (() => Promise<unknown>),
-  leerObservabilidad: vi.fn(async (): Promise<unknown> => null),
 }));
 vi.mock("@/lib/db/client", async (original) => ({
   ...(await original<typeof import("@/lib/db/client")>()),
   db: (() => estado.fuente!()) as FuenteDb,
 }));
-vi.mock("@/lib/panel/observabilidad", () => ({ leerMetricasObservabilidad: estado.leerObservabilidad }));
 
 const CLAVE = "clave-del-panel";
 const AUTH: Record<string, string> = { authorization: `Basic ${Buffer.from(`speaker:${CLAVE}`).toString("base64")}` };
@@ -35,8 +33,6 @@ beforeEach(async () => {
   db = await crearDbTemporal();
   estado.fuente = db.fuente;
   interruptores.limpiarCache();
-  estado.leerObservabilidad.mockReset();
-  estado.leerObservabilidad.mockResolvedValue(null);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -86,7 +82,7 @@ describe("GET /api/panel/metricas", () => {
     await db.cliente.execute("UPDATE presupuesto SET coste_usd = 0.125 WHERE id = 1");
   }
 
-  it("métricas de charla.db y votos; observabilidad no disponible → disponible: false", async () => {
+  it("métricas de charla.db y votos; sin turnos → observabilidad disponible en cero", async () => {
     await sembrar();
     const r = await metricas();
     expect(r.status).toBe(200);
@@ -98,7 +94,7 @@ describe("GET /api/panel/metricas", () => {
       escalamientos_pendientes: 1,
       votos: { positivos: 2, negativos: 1 },
       presupuesto: { acumulado_usd: 0.125, maximo_usd: 10 },
-      observabilidad: { disponible: false },
+      observabilidad: { disponible: true, turnos: 0, errores: 0, latencia_p50_ms: null, modelo_en_uso: null },
     });
     expect(typeof cuerpo.actualizado_en).toBe("string");
     expect(cuerpo.version).toBe(VERSION_APP);
@@ -112,38 +108,41 @@ describe("GET /api/panel/metricas", () => {
     expect(cuerpo.presupuesto).toEqual({ acumulado_usd: 0, maximo_usd: null });
   });
 
-  it("incluye latencia, errores y bloqueos cuando la observabilidad responde", async () => {
-    const obs: MetricasTrazas = {
-      latencia: { p50Ms: 2900, p95Ms: 6700, muestras: 10 },
-      errores: 2,
-      erroresPorTipo: { tiempo: 1, herramienta: 1 },
-      bloqueos: { total: 3, porMotivo: { inyeccion: 1, fuera_de_alcance: 2 } },
-      turnos: 15,
-      respaldo: { ultimaHora: 4, ultimaEn: "2026-09-26T18:55:00.000Z" },
-      modeloEnUso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z", traceId: "t-interno" },
-    };
-    estado.leerObservabilidad.mockResolvedValue(obs);
+  it("latencia, fallas, bloqueos, respaldo y modelo en uso salen de la tabla turnos (sin leer trazas)", async () => {
+    const ahora = Date.now();
+    const t = crearTurnos(db.fuente);
+    const base = { motivoBloqueo: null, tipoFalla: null, respaldo: false, modelo: "gemini-3.8-flash", traceId: "t-x" } as const;
+    for (const d of [2900, 2000, 6700]) await t.registrar({ ...base, iniciadoMs: ahora - 10 * 60_000, duracionMs: d, resultado: "ok" });
+    await t.registrar({ ...base, iniciadoMs: ahora - 5 * 60_000, duracionMs: null, resultado: "falla", tipoFalla: "tiempo", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 5 * 60_000, duracionMs: 4000, resultado: "falla", tipoFalla: "herramienta" });
+    await t.registrar({ ...base, iniciadoMs: ahora - 4 * 60_000, duracionMs: 500, resultado: "bloqueo", motivoBloqueo: "inyeccion", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 4 * 60_000, duracionMs: 500, resultado: "bloqueo", motivoBloqueo: "fuera_de_alcance", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 60_000, duracionMs: 3500, resultado: "ok", respaldo: true, modelo: "openai/gpt-6-luna", traceId: "t-interno" });
     const cuerpo = await (await metricas()).json();
+    const en = new Date(ahora - 60_000).toISOString();
     expect(cuerpo.observabilidad).toEqual({
       disponible: true,
-      latencia_p50_ms: 2900,
+      latencia_p50_ms: 3500,
       latencia_p95_ms: 6700,
-      muestras_latencia: 10,
+      muestras_latencia: 5,
       errores: 2,
       errores_por_tipo: { tiempo: 1, herramienta: 1 },
-      bloqueos: { total: 3, por_motivo: { inyeccion: 1, fuera_de_alcance: 2 } },
-      turnos: 15,
-      respaldo: { ultima_hora: 4, ultima_en: "2026-09-26T18:55:00.000Z" },
+      bloqueos: { total: 2, por_motivo: { inyeccion: 1, fuera_de_alcance: 1 } },
+      turnos: 8,
+      respaldo: { ultima_hora: 1, ultima_en: en },
       // Sin el traceId interno.
-      modelo_en_uso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z" },
+      modelo_en_uso: { estado: "respaldo", modelo: "openai/gpt-6-luna", en },
     });
   });
 
-  it("si la lectura de observabilidad lanza, igual responde las métricas de charla.db", async () => {
-    estado.leerObservabilidad.mockRejectedValue(new Error("Neon caído"));
+  it("si la lectura de turnos falla, igual responde las métricas de charla.db", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const espia = vi.spyOn(turnos, "resumen").mockRejectedValue(new Error("tabla bloqueada"));
     const r = await metricas();
     expect(r.status).toBe(200);
     expect((await r.json()).observabilidad).toEqual({ disponible: false });
+    espia.mockRestore();
+    error.mockRestore();
   });
 
   it("500 genérico si falla charla.db", async () => {

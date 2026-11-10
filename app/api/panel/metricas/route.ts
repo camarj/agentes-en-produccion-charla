@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { feedback } from "@/lib/db/feedback";
 import { metricasCharla } from "@/lib/db/metricas";
+import { turnos } from "@/lib/db/turnos";
 import { autorizadoPanel, noAutorizado } from "@/lib/panel/auth";
 import type { MetricasTrazas } from "@/lib/panel/metricas-trazas";
-import { leerMetricasObservabilidad } from "@/lib/panel/observabilidad";
 import { jsonPanel } from "@/lib/panel/respuestas";
 import type { MetricasPanel } from "@/lib/panel/tipos";
 import { presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
@@ -28,12 +28,21 @@ function observabilidad(m: MetricasTrazas | null): MetricasPanel["observabilidad
   };
 }
 
-// GET → MetricasPanel. Las de charla.db nunca esperan a la observabilidad:
-// si Mastra no responde (arranque, Neon caído), sale `disponible: false`.
+// Turnos, latencia, fallas, bloqueos y respaldo salen de la tabla `turnos` de
+// charla.db con agregados SQL (PRD §15 G7): sin releer las trazas de Mastra y
+// sin tope. Si esa lectura falla, el resto responde igual (`disponible: false`).
+function leerTurnos(): Promise<MetricasTrazas | null> {
+  return turnos.resumen().catch((error: unknown) => {
+    console.error("[panel/metricas] no se pudieron leer los turnos", { tipo: error instanceof Error ? error.name : typeof error });
+    return null;
+  });
+}
+
+// GET → MetricasPanel.
 export async function GET(request: NextRequest) {
   if (!autorizadoPanel(request)) return noAutorizado();
   try {
-    const trazas = leerMetricasObservabilidad().catch(() => null);
+    const trazas = leerTurnos();
     const [resumen, votos, acumulado, obs] = await Promise.all([
       metricasCharla.resumen(),
       feedback.totales(),

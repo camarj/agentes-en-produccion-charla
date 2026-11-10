@@ -4,6 +4,7 @@ import { RequestContext } from "@mastra/core/request-context";
 import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { crearInterruptores } from "@/lib/db/interruptores";
 import { crearLaminas } from "@/lib/db/laminas";
+import { crearSenales } from "@/lib/salud/senales";
 import { crearDbTemporal } from "@/lib/db/prueba";
 import { extraerLaminas, importarLaminas } from "@/scripts/importar-laminas";
 import { crearBuscarLaminas, type salidaBuscarLaminas } from "./buscar-laminas";
@@ -148,6 +149,29 @@ describe("buscar_laminas", () => {
       // La falla queda también en la raíz del turno: el panel la cuenta aunque el agente responda.
       expect(span.agentRun.update).toHaveBeenCalledWith({ metadata: { falla_herramienta: true } });
       expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("anota en las señales del turno los intentos y si la búsqueda agotó sus reintentos", async () => {
+      const herramienta = await preparar("herramienta_caida");
+      const ctx = contexto() as unknown as { requestContext: RequestContext };
+      const senales = crearSenales(ctx.requestContext);
+      const promesa = ejecutar(herramienta, { consulta: "resiliencia" }, ctx as never);
+      await vi.advanceTimersByTimeAsync(300 + 900);
+      await promesa;
+      expect(senales.busqueda).toEqual({ intentos: 3, agotada: true });
+    });
+
+    it("un reintento que sale bien queda anotado sin agotar la búsqueda", async () => {
+      await interruptores.obtenerTodos();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      buscar.mockRejectedValueOnce(new Error("busy"));
+      const herramienta = crearBuscarLaminas({ laminas: { buscar }, interruptores });
+      const ctx = contexto() as unknown as { requestContext: RequestContext };
+      const senales = crearSenales(ctx.requestContext);
+      const promesa = ejecutar(herramienta, { consulta: "resiliencia" }, ctx as never);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await promesa).toMatchObject({ sin_resultados: expect.any(Boolean) });
+      expect(senales.busqueda).toEqual({ intentos: 2, agotada: false });
     });
 
     it("con latencia_alta cada intento se corta a los 5 s", async () => {

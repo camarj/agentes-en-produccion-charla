@@ -1,6 +1,8 @@
 import { Agent } from "@mastra/core/agent";
+import { RequestContext } from "@mastra/core/request-context";
 import { APICallError } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { crearSenales } from "@/lib/salud/senales";
 import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
 import {
   FallbackModelo,
@@ -177,6 +179,25 @@ describe("FallbackModelo.processInputStep (unidad)", () => {
     expect(span.update).toHaveBeenCalledWith(marca);
     expect(agentRun.update).toHaveBeenCalledWith(marca);
     expect(generation.update).toHaveBeenCalledWith(marca);
+  });
+
+  it("anota en las señales del turno que respondió el respaldo y si la caída fue simulada", async () => {
+    const rc = new RequestContext();
+    const senales = crearSenales(rc);
+    await new FallbackModelo({ interruptores: interruptores("on") }).processInputStep({ model: modelo(MODELO_RESPALDO), requestContext: rc } as never);
+    expect(senales.respaldo).toEqual({ modelo: MODELO_RESPALDO, causa: "sobrecarga" });
+
+    const real = new RequestContext();
+    const senalesReal = crearSenales(real);
+    await new FallbackModelo({ interruptores: interruptores("off") }).processInputStep({ model: modelo(MODELO_RESPALDO), requestContext: real } as never);
+    expect(senalesReal.respaldo).toEqual({ modelo: MODELO_RESPALDO, causa: null });
+  });
+
+  it("con modelos_caidos=on anota la caída simulada y no anota respaldo", async () => {
+    const rc = new RequestContext();
+    const senales = crearSenales(rc);
+    await new FallbackModelo({ interruptores: interruptores("off", "on") }).processInputStep({ model: modelo(MODELO_RESPALDO), requestContext: rc } as never);
+    expect(senales).toEqual({ modelosCaidosSimulado: true });
   });
 
   it("si no puede leer los interruptores, asume que están apagados", async () => {

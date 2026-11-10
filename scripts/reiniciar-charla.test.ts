@@ -29,6 +29,7 @@ describe("reiniciarCharlaDb", () => {
         "UPDATE interruptores SET valor = 'on' WHERE clave IN ('kill_switch', 'modelo_caido')",
         "UPDATE interruptores SET valor = '33' WHERE clave = 'lamina_actual'",
         "UPDATE presupuesto SET coste_usd = 1.25 WHERE id = 1",
+        "INSERT INTO turnos (iniciado_ms, duracion_ms, resultado, respaldo) VALUES (1, 2000, 'ok', 0)",
         `INSERT INTO jev_analisis (trace_id, turno_en, pregunta, tema, tema_confianza, intencion, intencion_confianza, confusion, confusion_confianza, valor, valor_confianza, latencia_ms, modelo)
          VALUES ('tr1', datetime('now'), '¿?', 'evals', 1, 'understand_concept', 1, 0, 1, 0, 1, 250, 'jev')`,
       ],
@@ -43,6 +44,7 @@ describe("reiniciarCharlaDb", () => {
         (SELECT count(*) FROM sesiones) AS sesiones, (SELECT count(*) FROM feedback) AS votos,
         (SELECT count(*) FROM escalamientos) AS escalamientos, (SELECT count(*) FROM jev_analisis) AS jev,
         (SELECT count(*) FROM eventos_interruptor) AS eventos, (SELECT count(*) FROM asistentes) AS asistentes,
+        (SELECT count(*) FROM turnos) AS turnos,
         (SELECT rol FROM asistentes WHERE id = 'a1') AS rol, (SELECT count(*) FROM laminas) AS laminas,
         (SELECT coste_usd FROM presupuesto WHERE id = 1) AS coste`)
     ).rows[0];
@@ -55,6 +57,7 @@ describe("reiniciarCharlaDb", () => {
       escalamientos: 1,
       analisisJev: 1,
       eventosInterruptor: 1,
+      turnos: 1,
       invitados: 1,
       costeUsd: 1.25,
       interruptoresCambiados: 3,
@@ -65,7 +68,7 @@ describe("reiniciarCharlaDb", () => {
   it("deja la actividad en cero y conserva inscritos con su perfil y láminas", async () => {
     await reiniciarCharlaDb(db.fuente, { aplicar: true });
     const e = await estado();
-    expect([e.sesiones, e.votos, e.escalamientos, e.jev, e.eventos].map(Number)).toEqual([0, 0, 0, 0, 0]);
+    expect([e.sesiones, e.votos, e.escalamientos, e.jev, e.eventos, e.turnos].map(Number)).toEqual([0, 0, 0, 0, 0, 0]);
     expect(Number(e.asistentes)).toBe(1);
     expect(e.rol).toBe("Contadora");
     expect(Number(e.laminas)).toBe(1);

@@ -159,6 +159,16 @@ const textoDe = (partes: Parte[]) =>
 
 const turnoMock = vi.mocked(ejecutarTurno);
 
+// Filas de `turnos` (métricas del panel, PRD §15 G7) cuando ya se escribieron.
+async function filasTurnos(n = 1) {
+  let filas: Record<string, unknown>[] = [];
+  await vi.waitFor(async () => {
+    filas = (await db.cliente.execute("SELECT * FROM turnos ORDER BY id")).rows as unknown as Record<string, unknown>[];
+    expect(filas).toHaveLength(n);
+  }, { timeout: 5000 });
+  return filas;
+}
+
 beforeEach(async () => {
   vi.stubEnv("SESSION_SECRET", "secreto-de-prueba-0123456789");
   vi.stubEnv("MAX_MENSAJES_ASISTENTE", "30");
@@ -379,6 +389,17 @@ describe("POST /api/chat: turno", () => {
     await vi.waitFor(async () => expect(await presupuesto.acumulado()).toBeCloseTo(esperado, 12), { timeout: 5000 });
   });
 
+  it("al terminar registra el turno en `turnos` (ok, duración, modelo y trace) sin datos personales", async () => {
+    const antes = Date.now();
+    const { cookie } = await preparar({ email: "zoraida.p@correo.ec", nombre: "Zoraida Paredes" });
+    await (await chat(peticionChat(cookie, mensajesUI("¿Qué es el harness?")))).text();
+    const [fila] = await filasTurnos();
+    expect(fila).toMatchObject({ resultado: "ok", tipo_falla: null, motivo_bloqueo: null, modelo: "gpt-6-luna", respaldo: 0, trace_id: "traza-prueba-1" });
+    expect(Number(fila.iniciado_ms)).toBeGreaterThanOrEqual(antes);
+    expect(Number(fila.duracion_ms)).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(fila)).not.toMatch(/zoraida|paredes|correo|harness/i);
+  });
+
   it("un bloqueo de entrada llega como data-tripwire con trace_id y no es una falla técnica", async () => {
     estado.verificar = vi.fn<VerificarEntrada>(async () => BLOQUEADO);
     const { asistente, cookie } = await preparar();
@@ -388,6 +409,7 @@ describe("POST /api/chat: turno", () => {
     expect(partes.find((p) => p.type === "finish")!.messageMetadata).toEqual({ trace_id: "traza-prueba-1" });
     expect(textoDe(partes)).toBe("");
     expect(await crearEscalamientos(db.fuente).contarPorAsistente(asistente.id)).toBe(0);
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "bloqueo", motivo_bloqueo: "fuera_de_alcance", tipo_falla: null });
   });
 
   it("si el modelo falla antes del primer token → mensaje fijo y escalamiento falla_tecnica con la pregunta", async () => {
@@ -413,6 +435,7 @@ describe("POST /api/chat: turno", () => {
         traceId: "traza-prueba-1",
       });
     }, { timeout: 5000 });
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "modelo", duracion_ms: null, modelo: null });
   });
 
   it("si el turno ni siquiera arranca → mensaje fijo y escalamiento falla_tecnica", async () => {
@@ -427,6 +450,7 @@ describe("POST /api/chat: turno", () => {
       const lista = await crearEscalamientos(db.fuente).listar();
       expect(lista.map((e) => [e.asistenteId, e.pregunta, e.motivo])).toEqual([[asistente.id, "¿Qué es un eval?", "falla_tecnica"]]);
     }, { timeout: 5000 });
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "otro", trace_id: null });
   });
 
   it("no escribe emails ni nombres en los logs", async () => {
