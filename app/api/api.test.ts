@@ -5,7 +5,7 @@ import { crearAsistentes } from "@/lib/db/asistentes";
 import { interruptores } from "@/lib/db/interruptores";
 import { crearDbTemporal } from "@/lib/db/prueba";
 import { cookieDe, peticion } from "@/lib/prueba-api";
-import { limitadorIdentificar } from "@/lib/rate-limit";
+import { limitadorIdentificar, limitadorIdentificarCuenta } from "@/lib/rate-limit";
 import { firmarToken } from "@/lib/session";
 import { POST as feedback } from "./feedback/route";
 import { POST as identificar } from "./identificar/route";
@@ -23,6 +23,16 @@ vi.mock("@/lib/db/client", async (original) => ({
   ...(await original<typeof import("@/lib/db/client")>()),
   db: (() => estado.fuente!()) as FuenteDb,
 }));
+// Google simulado: la credencial «g:<email>» o «g:<email>|<nombre>» es válida;
+// cualquier otra la rechaza Google.
+vi.mock("@/lib/google", () => ({
+  verificarCredencialGoogle: async (credencial: string) => {
+    if (!credencial.startsWith("g:")) return null;
+    const [email, nombre] = credencial.slice(2).split("|");
+    const limpio = email.trim().toLowerCase();
+    return { cuenta: `sub-${limpio}`, email: limpio, nombre: nombre ?? null };
+  },
+}));
 vi.mock("@/src/mastra", () => ({
   mastra: { observability: { addFeedback: estado.addFeedback } },
 }));
@@ -33,8 +43,14 @@ let ipSiguiente = 0;
 // IP distinta por test para no chocar con el rate limit.
 const ipNueva = () => `10.0.0.${++ipSiguiente}`;
 
-async function identificarCon(email: unknown, ip = ipNueva()) {
-  const r = await identificar(peticion("/api/identificar", { cuerpo: { email }, cabeceras: { "x-forwarded-for": ip } }));
+async function identificarConCuerpo(cuerpo: unknown, ip = ipNueva()) {
+  const r = await identificar(peticion("/api/identificar", { cuerpo, cabeceras: { "x-forwarded-for": ip } }));
+  return { r, cuerpo: await r.json(), cookie: cookieDe(r) };
+}
+
+// Entra con una cuenta de Google simulada que tiene ese email.
+async function identificarCon(email: string, ip = ipNueva()) {
+  const r = await identificar(peticion("/api/identificar", { cuerpo: { credencial: `g:${email}` }, cabeceras: { "x-forwarded-for": ip } }));
   return { r, cuerpo: await r.json(), cookie: cookieDe(r) };
 }
 
@@ -44,6 +60,7 @@ beforeEach(async () => {
   estado.fuente = db.fuente;
   repo = crearAsistentes(db.fuente);
   limitadorIdentificar.reiniciar();
+  limitadorIdentificarCuenta.reiniciar();
   interruptores.limpiarCache();
   estado.addFeedback.mockClear();
 });
@@ -99,33 +116,70 @@ describe("POST /api/identificar", () => {
     expect(texto).not.toMatch(/Directora|soporte|carla@e\.com/i);
   });
 
-  it("email inválido o cuerpo ilegible → 400 email_invalido en español", async () => {
-    for (const email of ["no-es-email", "", 42, undefined]) {
-      const { r, cuerpo, cookie } = await identificarCon(email);
-      expect(r.status).toBe(400);
-      expect(cuerpo.error).toBe("email_invalido");
-      expect(cuerpo.mensaje).toMatch(/correo/i);
-      expect(cookie).toBeUndefined();
+  it("credencial ausente, rechazada por Google o cuerpo ilegible → 401 credencial_invalida en español, sin cookie", async () => {
+    for (const cuerpo of [{}, { credencial: "" }, { credencial: 42 }, { credencial: "falsa" }, { credencial: "x".repeat(5000) }]) {
+      const r = await identificarConCuerpo(cuerpo);
+      expect(r.r.status).toBe(401);
+      expect(r.cuerpo.error).toBe("credencial_invalida");
+      expect(r.cuerpo.mensaje).toMatch(/Google/);
+      expect(r.cookie).toBeUndefined();
     }
     const r = await identificar(peticion("/api/identificar", { cuerpo: "{roto", cabeceras: { "x-forwarded-for": ipNueva() } }));
-    expect(r.status).toBe(400);
-    expect((await r.json()).error).toBe("email_invalido");
+    expect(r.status).toBe(401);
+    expect((await r.json()).error).toBe("credencial_invalida");
   });
 
-  // Decisión de Raúl (2026-09-23): 60/min, porque todo el público comparte el Wi‑Fi del lugar.
-  it("61 intentos en un minuto desde la misma IP → el 61.º es 429", async () => {
+  // S1 (DevFest 2026-11-10): escribir el email de otra persona ya no abre sesión.
+  it("un email escrito sin credencial de Google no abre sesión", async () => {
+    await repo.upsertInscrito({ email: "victima@e.com", nombre: "Víctima", rol: "Dev", descripcion: null });
+    const r = await identificarConCuerpo({ email: "victima@e.com" });
+    expect(r.r.status).toBe(401);
+    expect(r.cookie).toBeUndefined();
+  });
+
+  it("cuenta nueva con nombre en Google → falta_perfil con su nombre de pila", async () => {
+    const r = await identificarConCuerpo({ credencial: "g:luis@gmail.com|Luis Mera" });
+    expect(r.cuerpo).toEqual({ estado: "falta_perfil", nombre_pila: "Luis" });
+    expect(await repo.buscarPorEmail("luis@gmail.com")).toMatchObject({ nombre: "Luis Mera", origen: "invitado" });
+  });
+
+  // S2: una sola sesión activa por asistente.
+  it("entrar de nuevo cierra la sesión anterior", async () => {
+    const primera = await identificarCon("unica@e.com");
+    const segunda = await identificarCon("unica@e.com");
+    const leer = async (cookie: string) => (await (await sesion(peticion("/api/sesion", { metodo: "GET", cookie }))).json()).autenticado;
+    expect(await leer(primera.cookie!)).toBe(false);
+    expect(await leer(segunda.cookie!)).toBe(true);
+  });
+
+  // S3 (DevFest): todo el público comparte la IP del Wi‑Fi; el tope por IP solo frena inundaciones.
+  it("200 personas distintas desde la misma IP en un minuto pueden entrar", async () => {
     const ip = ipNueva();
-    for (let i = 0; i < 60; i++) {
-      const { r } = await identificarCon(`p${i}@e.com`, ip);
+    for (let i = 0; i < 200; i++) {
+      const { r } = await identificarCon(`wifi${i}@e.com`, ip);
       expect(r.status).toBe(200);
     }
-    const { r, cuerpo } = await identificarCon("p60@e.com", ip);
+  });
+
+  it("más de 600 intentos por minuto desde la misma IP → 429 con Retry-After", async () => {
+    const ip = ipNueva();
+    for (let i = 0; i < 600; i++) limitadorIdentificar.consumir(`identificar:${ip}`);
+    const { r, cuerpo } = await identificarCon("p600@e.com", ip);
     expect(r.status).toBe(429);
     expect(cuerpo.error).toBe("demasiados_intentos");
     expect(cuerpo.mensaje).toMatch(/intent/i);
     expect(r.headers.get("retry-after")).toBeTruthy();
     // Otra IP sigue pudiendo entrar.
     expect((await identificarCon("otra@e.com")).r.status).toBe(200);
+  });
+
+  it("la misma cuenta de Google más de 10 veces por minuto → 429", async () => {
+    for (let i = 0; i < 10; i++) expect((await identificarCon("insistente@e.com")).r.status).toBe(200);
+    const { r, cuerpo } = await identificarCon("insistente@e.com");
+    expect(r.status).toBe(429);
+    expect(cuerpo.error).toBe("demasiados_intentos");
+    // Otra cuenta no se ve afectada.
+    expect((await identificarCon("tranquila@e.com")).r.status).toBe(200);
   });
 
   it("error interno → 500 genérico sin detalles técnicos", async () => {

@@ -486,3 +486,14 @@ Cambios de la versión 1.0 (2026-09-23) a la 2.0 (2026-09-25). Todos son decisio
 | D10 | 2026-09-25 | Meta de adopción: 15 de 25 (60 %) | §4: 16 de 26 | Se excluye al speaker (#13) | §4 |
 | D11 | 2026-09-25 | Meta de latencia p95 < 3 s se mantiene, documentada como no cumplida (p95 ~6,7 s, p50 ~2–3 s) | §4 | Transparencia: no se relaja la meta | T09, T14 |
 | D12 | 2026-09-25 | RF-14: el dictado cubre la voz en parte; Vapi (fase 2) queda pendiente. La lámina actual empieza en 1 (sin cambios) | RF-14 | Alcance realista para la fecha | RF-14 |
+
+**Charla ESPOL (2026-11-25) y Google DevFest Guayaquil (2026-12-05)**
+
+Cambios para pasar de ~25 asistentes a más de 1000. Las decisiones del 2026-11-10 llevan la letra G. Seguimiento: `odd/tasks/devfest-acceso-google-gemini.md`.
+
+| # | Fecha | Cambio | Requisito original | Motivo | Criterios de aceptación afectados |
+| --- | --- | --- | --- | --- | --- |
+| G1 | 2026-11-10 | Se entra con la cuenta de Google (botón oficial «Continuar con Google»); el servidor verifica el ID token (emitido para nuestro client ID, email verificado). Ya no se escribe el email. Puede entrar cualquier persona que escanee el QR con una cuenta de Google; no se exige estar en la lista de inscritos. El nombre de la cuenta de Google se usa como nombre inicial | RF-01, T08, T10: identificación por email escrito | Cualquiera que conociera el email de otra persona podía entrar como ella | T08 (`/api/identificar` recibe `{ credencial }`, 401 `credencial_invalida`), T10 (pantalla de entrada) |
+| G2 | 2026-11-10 | Una sola sesión activa por asistente: entrar de nuevo revoca las sesiones anteriores (columna `sesiones.revocada_en`, migración 006). El hilo y el contador de mensajes se conservan | T08: varias sesiones por asistente | Una persona, un dispositivo conectado | T08, T09 (tope de mensajes) |
+| G3 | 2026-11-10 | Límite de entrada: 600 intentos/min por IP (solo frena inundaciones) y 10/min por cuenta de Google | RF-01: 10/min por IP; luego 60/min | Más de 1000 personas comparten la IP del Wi‑Fi del lugar; con 60/min la mayoría vería «Demasiados intentos» | T08 |
+| G4 | 2026-11-10 | La prueba de carga crea las sesiones directo en `charla.db` y firma la cookie con `SESSION_SECRET` (ya no pasa por `/api/identificar`) | T14 | La entrada exige una cuenta de Google real | T14 (`pnpm carga` corre dentro del contenedor) |

@@ -36,9 +36,32 @@ export function crearSesiones(fuente: FuenteDb = db) {
     return aSesion(r.rows[0]);
   }
 
+  // Al entrar (identificar): revoca las sesiones activas del asistente y crea
+  // una nueva que hereda su hilo. Así solo un dispositivo queda conectado.
+  async function reemplazar(asistenteId: string): Promise<Sesion> {
+    const c = await fuente();
+    const [, creada] = await c.batch(
+      [
+        {
+          sql: "UPDATE sesiones SET revocada_en = datetime('now') WHERE asistente_id = ? AND revocada_en IS NULL",
+          args: [asistenteId],
+        },
+        {
+          sql: `INSERT INTO sesiones (token, asistente_id, thread_id)
+                VALUES (?, ?, COALESCE((SELECT thread_id FROM sesiones WHERE asistente_id = ? ORDER BY rowid DESC LIMIT 1), ?))
+                RETURNING *`,
+          args: [crypto.randomBytes(32).toString("base64url"), asistenteId, asistenteId, `charla-${asistenteId}`],
+        },
+      ],
+      "write",
+    );
+    return aSesion(creada.rows[0]);
+  }
+
+  // Solo sesiones activas: una revocada ya no autentica.
   async function obtener(token: string): Promise<Sesion | null> {
     const c = await fuente();
-    const r = await c.execute({ sql: "SELECT * FROM sesiones WHERE token = ?", args: [token] });
+    const r = await c.execute({ sql: "SELECT * FROM sesiones WHERE token = ? AND revocada_en IS NULL", args: [token] });
     return r.rows[0] ? aSesion(r.rows[0]) : null;
   }
 
@@ -71,7 +94,7 @@ export function crearSesiones(fuente: FuenteDb = db) {
     return hilo;
   }
 
-  return { crear, obtener, incrementarMensajes, nuevoHilo };
+  return { crear, reemplazar, obtener, incrementarMensajes, nuevoHilo };
 }
 
 export const sesiones = crearSesiones();

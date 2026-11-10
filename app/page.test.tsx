@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { instalarGoogleSimulado } from "@/lib/prueba-google";
 import Home from "./page";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
@@ -24,11 +25,13 @@ let fetchSimulado: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchSimulado = vi.fn();
   vi.stubGlobal("fetch", fetchSimulado);
+  instalarGoogleSimulado();
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 function sesion(cuerpo: unknown) {
@@ -46,7 +49,7 @@ describe("página principal: ruteo por sesión", () => {
   it("sin sesión muestra la entrada", async () => {
     sesion({ autenticado: false, estado: "sin_sesion" });
     render(<Home />);
-    expect(await screen.findByLabelText("Tu email de registro")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeTruthy();
   });
 
   it("nuevo muestra el perfil con el nombre", async () => {
@@ -72,7 +75,7 @@ describe("página principal: ruteo por sesión", () => {
   it("si no puede revisar la sesión, muestra la entrada", async () => {
     fetchSimulado.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     render(<Home />);
-    expect(await screen.findByLabelText("Tu email de registro")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeTruthy();
   });
 });
 
@@ -83,7 +86,7 @@ describe("página principal: transiciones sin recargar", () => {
     fetchSimulado.mockResolvedValueOnce(respuestaJson(200, { ok: true, nombre_pila: "Zoe" }));
     render(<Home />);
 
-    await userEvent.type(await screen.findByLabelText("Tu email de registro"), "zoe@ejemplo.com{Enter}");
+    await userEvent.click(await screen.findByRole("button", { name: "Continuar con Google" }));
     await userEvent.type(await screen.findByLabelText("¿Cómo te llamas?"), "Zoe Ruiz");
     await userEvent.type(screen.getByLabelText("¿A qué te dedicas?"), "Diseñadora");
     await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
@@ -97,7 +100,7 @@ describe("página principal: transiciones sin recargar", () => {
     sesion({ autenticado: false, estado: "sin_sesion" });
     fetchSimulado.mockResolvedValueOnce(respuestaJson(200, { estado: "listo", nombre_pila: "Andrea" }));
     render(<Home />);
-    await userEvent.type(await screen.findByLabelText("Tu email de registro"), "andrea@ejemplo.com{Enter}");
+    await userEvent.click(await screen.findByRole("button", { name: "Continuar con Google" }));
     expect(await screen.findByRole("heading", { name: "Hola, Andrea" })).toBeTruthy();
   });
 
@@ -105,7 +108,7 @@ describe("página principal: transiciones sin recargar", () => {
     sesion({ autenticado: true, estado: "listo", nombre_pila: "Andrea" });
     render(<Home />);
     await userEvent.click(await screen.findByRole("button", { name: "simular 401" }));
-    expect(await screen.findByLabelText("Tu email de registro")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeTruthy();
   });
 
   it("perfil con sesión vencida vuelve a la entrada", async () => {
@@ -113,6 +116,6 @@ describe("página principal: transiciones sin recargar", () => {
     fetchSimulado.mockResolvedValueOnce(respuestaJson(401, { error: "no_autenticado", mensaje: "Tu sesión expiró." }));
     render(<Home />);
     await userEvent.click(await screen.findByRole("button", { name: "Saltar" }));
-    await waitFor(() => expect(screen.getByLabelText("Tu email de registro")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continuar con Google" })).toBeTruthy());
   });
 });

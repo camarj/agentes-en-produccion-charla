@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CLIENTE_ID_PRUEBA, instalarGoogleSimulado } from "@/lib/prueba-google";
 import { PantallaEntrada } from "./pantalla-entrada";
 
 const toastError = vi.hoisted(() => vi.fn());
@@ -12,115 +13,105 @@ function respuestaJson(status: number, cuerpo: unknown) {
 }
 
 let fetchSimulado: ReturnType<typeof vi.fn>;
+let google: ReturnType<typeof instalarGoogleSimulado>;
 
 beforeEach(() => {
   fetchSimulado = vi.fn();
   vi.stubGlobal("fetch", fetchSimulado);
+  google = instalarGoogleSimulado("cred-andrea");
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   toastError.mockReset();
 });
 
-function campoEmail() {
-  return screen.getByLabelText("Tu email de registro") as HTMLInputElement;
-}
+const botonGoogle = () => screen.findByRole("button", { name: "Continuar con Google" });
 
 describe("PantallaEntrada", () => {
-  it("muestra los textos de la charla y un input de email accesible", () => {
+  it("muestra los textos de la charla y el botón de Google, sin campo de email", async () => {
     render(<PantallaEntrada onIdentificado={vi.fn()} />);
     expect(screen.getByText("Charla · Inteliside")).toBeTruthy();
     expect(screen.getByRole("img", { name: "Inteliside" }).getAttribute("src")).toContain("inteliside-logo");
     expect(screen.getByRole("heading", { level: 1, name: "Cómo lograr que tus agentes sobrevivan a producción" })).toBeTruthy();
     expect(screen.getByText("Pregúntale al asistente cualquier cosa de la charla.")).toBeTruthy();
-    expect(screen.getByText("Usamos tu email solo para personalizar las respuestas durante la charla.")).toBeTruthy();
-    const input = campoEmail();
-    expect(input.type).toBe("email");
-    expect(input.getAttribute("inputmode")).toBe("email");
-    expect(input.getAttribute("autocomplete")).toBe("email");
-    expect(input.getAttribute("autocapitalize")).toBe("none");
-    expect(input.getAttribute("spellcheck")).toBe("false");
+    expect(screen.getByText("Usamos tu cuenta de Google solo para saber quién eres y personalizar las respuestas durante la charla.")).toBeTruthy();
+    expect(await botonGoogle()).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("con Enter envía el email y avisa el resultado", async () => {
+  it("inicializa Google con nuestro client id, en ventana emergente y en español", async () => {
+    render(<PantallaEntrada onIdentificado={vi.fn()} />);
+    await botonGoogle();
+    expect(google.initialize).toHaveBeenCalledWith(expect.objectContaining({ client_id: CLIENTE_ID_PRUEBA, ux_mode: "popup" }));
+    expect(google.renderButton.mock.calls[0][1]).toMatchObject({ locale: "es", text: "continue_with" });
+  });
+
+  it("al elegir la cuenta envía la credencial de Google y avisa el resultado", async () => {
     fetchSimulado.mockResolvedValue(respuestaJson(200, { estado: "listo", nombre_pila: "Andrea" }));
     const onIdentificado = vi.fn();
     render(<PantallaEntrada onIdentificado={onIdentificado} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo.com{Enter}");
+    await userEvent.click(await botonGoogle());
     await waitFor(() => expect(onIdentificado).toHaveBeenCalledWith({ estado: "listo", nombre_pila: "Andrea" }));
-    expect(JSON.parse(fetchSimulado.mock.calls[0][1].body)).toEqual({ email: "andrea@ejemplo.com" });
+    const [url, init] = fetchSimulado.mock.calls[0];
+    expect(url).toBe("/api/identificar");
+    expect(JSON.parse(init.body)).toEqual({ credencial: "cred-andrea" });
   });
 
-  it("mientras envía deshabilita el input y el botón muestra que está ocupado", async () => {
+  it("mientras envía muestra que está ocupado", async () => {
     let resolver: (r: Response) => void = () => {};
     fetchSimulado.mockReturnValue(new Promise<Response>((r) => (resolver = r)));
     render(<PantallaEntrada onIdentificado={vi.fn()} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo.com");
-    await userEvent.click(screen.getByRole("button", { name: /Entrar/ }));
-    expect(campoEmail().disabled).toBe(true);
-    expect(screen.getByRole("button", { name: /Entrar/ }).getAttribute("aria-busy")).toBe("true");
+    await userEvent.click(await botonGoogle());
+    expect(await screen.findByText("Entrando…")).toBeTruthy();
     resolver(respuestaJson(200, { estado: "nuevo" }));
-    await waitFor(() => expect(campoEmail().disabled).toBe(false));
-  });
-
-  it("un email mal escrito se marca bajo el input sin llamar a la API", async () => {
-    render(<PantallaEntrada onIdentificado={vi.fn()} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo{Enter}");
-    const input = campoEmail();
-    expect(input.getAttribute("aria-invalid")).toBe("true");
-    const mensaje = screen.getByText("Revisa tu correo: no parece una dirección válida.");
-    expect(input.getAttribute("aria-describedby")).toContain(mensaje.id);
-    expect(fetchSimulado).not.toHaveBeenCalled();
-  });
-
-  it("un 400 de la API muestra su mensaje bajo el input con aria-invalid", async () => {
-    fetchSimulado.mockResolvedValue(respuestaJson(400, { error: "email_invalido", mensaje: "Revisa tu correo: no parece una dirección válida." }));
-    render(<PantallaEntrada onIdentificado={vi.fn()} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo.c{Enter}");
-    await screen.findByText("Revisa tu correo: no parece una dirección válida.");
-    expect(campoEmail().getAttribute("aria-invalid")).toBe("true");
-  });
-
-  it("al corregir el email se quita el error", async () => {
-    render(<PantallaEntrada onIdentificado={vi.fn()} />);
-    await userEvent.type(campoEmail(), "mal{Enter}");
-    expect(campoEmail().getAttribute("aria-invalid")).toBe("true");
-    await userEvent.type(campoEmail(), "@ejemplo.com");
-    expect(campoEmail().getAttribute("aria-invalid")).not.toBe("true");
+    await waitFor(() => expect(screen.queryByText("Entrando…")).toBeNull());
   });
 
   it("un 429 muestra «Demasiados intentos, espera un minuto»", async () => {
     fetchSimulado.mockResolvedValue(respuestaJson(429, { error: "demasiados_intentos", mensaje: "x" }));
     const onIdentificado = vi.fn();
     render(<PantallaEntrada onIdentificado={onIdentificado} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo.com{Enter}");
+    await userEvent.click(await botonGoogle());
     expect((await screen.findByRole("alert")).textContent).toContain("Demasiados intentos, espera un minuto");
     expect(onIdentificado).not.toHaveBeenCalled();
   });
 
-  it("un 500 muestra el mensaje en español de la API, sin detalles técnicos", async () => {
-    fetchSimulado.mockResolvedValue(respuestaJson(500, { error: "error_interno", mensaje: "Algo salió mal. Intenta de nuevo en un momento." }));
-    render(<PantallaEntrada onIdentificado={vi.fn()} />);
-    await userEvent.type(campoEmail(), "andrea@ejemplo.com{Enter}");
-    expect((await screen.findByRole("alert")).textContent).toContain("Algo salió mal. Intenta de nuevo en un momento.");
+  it("una credencial rechazada (401) o un 500 muestra el mensaje en español de la API", async () => {
+    for (const [status, mensaje] of [
+      [401, "No pudimos confirmar tu cuenta de Google. Intenta de nuevo."],
+      [500, "Algo salió mal. Intenta de nuevo en un momento."],
+    ] as const) {
+      fetchSimulado.mockResolvedValueOnce(respuestaJson(status, { error: "x", mensaje }));
+      render(<PantallaEntrada onIdentificado={vi.fn()} />);
+      await userEvent.click(await botonGoogle());
+      expect((await screen.findByRole("alert")).textContent).toContain(mensaje);
+      cleanup();
+    }
   });
 
-  it("un error de red abre un toast con «Reintentar» que vuelve a enviar", async () => {
+  it("un error de red abre un toast con «Reintentar» que vuelve a enviar la misma credencial", async () => {
     fetchSimulado.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     fetchSimulado.mockResolvedValueOnce(respuestaJson(200, { estado: "falta_perfil", nombre_pila: "Diego" }));
     const onIdentificado = vi.fn();
     render(<PantallaEntrada onIdentificado={onIdentificado} />);
-    await userEvent.type(campoEmail(), "diego@ejemplo.com{Enter}");
+    await userEvent.click(await botonGoogle());
     await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
     const [texto, opciones] = toastError.mock.calls[0];
     expect(texto).not.toMatch(/fetch/i);
     expect(opciones.action.label).toBe("Reintentar");
-    expect(campoEmail().disabled).toBe(false);
 
     opciones.action.onClick();
     await waitFor(() => expect(onIdentificado).toHaveBeenCalledWith({ estado: "falta_perfil", nombre_pila: "Diego" }));
     expect(fetchSimulado).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSimulado.mock.calls[1][1].body)).toEqual({ credencial: "cred-andrea" });
+  });
+
+  it("sin client id configurado avisa que el acceso con Google no está disponible", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "");
+    render(<PantallaEntrada onIdentificado={vi.fn()} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("No pudimos cargar el acceso con Google");
   });
 });

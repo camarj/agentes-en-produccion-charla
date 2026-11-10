@@ -1,14 +1,23 @@
 import { parseArgs } from "node:util";
+import type { Client } from "@libsql/client";
+import { crearAsistentes } from "../lib/db/asistentes";
+import { crearSesiones } from "../lib/db/sesiones";
+import { firmarToken, NOMBRE_COOKIE } from "../lib/session";
 import { abrirBaseMigrada, ejecutarCli } from "./comun";
 
 // Prueba de carga (T14): N asistentes de prueba (`carga+<n>@carga.example.com`)
-// se identifican contra la URL pública, completan su perfil y envían P
+// entran (con la sesión creada directo en charla.db, ver abajo), completan su perfil y envían P
 // preguntas cada uno; los N van en paralelo y cada uno envía sus preguntas en
 // serie. Reporta primer token p50/p95, duración total p95 y errores por estado.
 //
 // Limpieza: los asistentes de prueba viven en charla.db. `--limpiar` los borra
 // al final (sesiones, escalamientos y votos caen en cascada) y `--solo-limpiar`
-// solo borra. Ambas necesitan la base, así que solo sirven dentro del
+// solo borra.
+//
+// Desde el DevFest (2026-12-05) la entrada exige una cuenta de Google, así que
+// la carga ya no pasa por /api/identificar: crea al asistente y su sesión en la
+// base y firma la cookie con SESSION_SECRET, igual que el servidor. Por eso la
+// carga entera necesita la base y la clave: corre dentro del
 // contenedor (o en local con la misma DATABASE_PATH que la app).
 // Nunca imprime emails ni nombres.
 
@@ -55,11 +64,6 @@ export function analizarTrozo(texto: string): { texto: boolean; error: boolean }
   return { texto: hayTexto, error: hayError };
 }
 
-function cookieDe(respuesta: Response): string | null {
-  const valor = respuesta.headers.getSetCookie().find((c) => c.startsWith("sesion="));
-  return valor ? valor.split(";")[0] : null;
-}
-
 async function enviarPregunta(url: string, cookie: string, pregunta: string, n: number): Promise<Turno> {
   const inicio = performance.now();
   let primerTokenMs: number | null = null;
@@ -96,14 +100,24 @@ async function enviarPregunta(url: string, cookie: string, pregunta: string, n: 
   }
 }
 
-async function asistente(url: string, n: number, preguntas: number): Promise<Turno[]> {
-  const id = await fetch(`${url}/api/identificar`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: emailPrueba(n) }),
-  }).catch(() => null);
-  const cookie = id?.ok ? cookieDe(id) : null;
-  if (!id || !cookie) return [{ estado: id ? id.status : "red", primerTokenMs: null, totalMs: 0, errorStream: false }];
+// Crea (o reutiliza) al asistente de prueba n y le abre una sesión nueva.
+// Devuelve la cabecera Cookie lista para enviar.
+export async function cookieDePrueba(cliente: Client, n: number): Promise<string> {
+  const fuente = async () => cliente;
+  const repo = crearAsistentes(fuente);
+  const email = emailPrueba(n);
+  const asistente = (await repo.buscarPorEmail(email)) ?? (await repo.crearInvitado({ email, nombre: "" }));
+  const sesion = await crearSesiones(fuente).reemplazar(asistente.id);
+  return `${NOMBRE_COOKIE}=${firmarToken(sesion.token)}`;
+}
+
+async function asistente(url: string, cliente: Client, n: number, preguntas: number): Promise<Turno[]> {
+  let cookie: string;
+  try {
+    cookie = await cookieDePrueba(cliente, n);
+  } catch {
+    return [{ estado: "red", primerTokenMs: null, totalMs: 0, errorStream: false }];
+  }
 
   const perfil = await fetch(`${url}/api/perfil`, {
     method: "POST",
@@ -157,8 +171,14 @@ async function principal() {
   const p = Number(values.preguntas);
   console.log(`Carga: ${n} asistentes × ${p} preguntas contra ${url}`);
 
+  const cliente = await abrirBaseMigrada();
   const inicio = performance.now();
-  const resultados = (await Promise.all(Array.from({ length: n }, (_, i) => asistente(url, i + 1, p)))).flat();
+  let resultados: Turno[];
+  try {
+    resultados = (await Promise.all(Array.from({ length: n }, (_, i) => asistente(url, cliente, i + 1, p)))).flat();
+  } finally {
+    cliente.close();
+  }
   const duracion = performance.now() - inicio;
 
   const chats = resultados.filter((t) => t.totalMs > 0);

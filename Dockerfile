@@ -35,6 +35,10 @@ COPY --chown=node:node . .
 # 2) Servidor Mastra con Studio (.mastra/output + .mastra/output/studio).
 # 3) Los builds abren las bases y crean archivos en data/: se borran para que el
 #    volumen arranque vacío (las migraciones corren al iniciar).
+# NEXT_PUBLIC_GOOGLE_CLIENT_ID se incrusta en el bundle del navegador al
+# construir: debe llegar como argumento de build (no es secreto).
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 RUN pnpm build \
  && cp -r public .next/standalone/public \
  && cp -r .next/static .next/standalone/.next/static \

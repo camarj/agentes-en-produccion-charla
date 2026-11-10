@@ -13,7 +13,6 @@ export const LARGO_MINIMO_ROL = 2;
 export const LARGO_MAXIMO_DESCRIPCION = 300;
 export const ROL_OMITIDO = "No indicado";
 
-export const MENSAJE_EMAIL_INVALIDO = "Revisa tu correo: no parece una dirección válida.";
 export const MENSAJE_DEMASIADOS_INTENTOS = "Demasiados intentos, espera un minuto";
 export const MENSAJE_SIN_CONEXION = "No pudimos conectarnos. Revisa tu conexión e intenta de nuevo.";
 export const MENSAJE_NOMBRE_REQUERIDO = "Cuéntanos tu nombre para continuar.";
@@ -30,12 +29,6 @@ export function pantallaPara(estado: EstadoSesion): Pantalla {
     default:
       return "entrada";
   }
-}
-
-// Revisión rápida en el navegador; la API valida de nuevo (400 email_invalido).
-export function emailValido(email: string): boolean {
-  const limpio = email.trim();
-  return limpio.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpio);
 }
 
 export function puedeContinuar(rol: string): boolean {
@@ -87,8 +80,9 @@ export function obtenerSesion() {
   return pedir<RespuestaSesion>("/api/sesion");
 }
 
-export function identificar(email: string) {
-  return pedir<RespuestaIdentificar>("/api/identificar", { email: email.trim() });
+// `credencial`: ID token que entrega el botón de Google; el servidor lo verifica.
+export function identificar(credencial: string) {
+  return pedir<RespuestaIdentificar>("/api/identificar", { credencial });
 }
 
 // Omite la descripción vacía (así no borra la que venía de Luma) y el nombre

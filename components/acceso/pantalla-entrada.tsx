@@ -2,44 +2,30 @@
 
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
-import { useId, useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  emailValido,
   identificar,
   MENSAJE_DEMASIADOS_INTENTOS,
-  MENSAJE_EMAIL_INVALIDO,
   MENSAJE_SIN_CONEXION,
   TEXTO_REINTENTAR,
   type RespuestaIdentificar,
 } from "@/lib/acceso";
-import { cn } from "@/lib/utils";
-import { Eyebrow, FOCO, Marco, mostrarAlAbrirTeclado } from "./marco";
+import { BotonGoogle } from "./boton-google";
+import { Eyebrow, Marco } from "./marco";
 
 type Props = { onIdentificado: (resultado: RespuestaIdentificar) => void };
 
+// Entrada con la cuenta de Google (DevFest 2026-12-05): ya no se escribe el
+// email, así nadie puede entrar con el correo de otra persona.
 export function PantallaEntrada({ onIdentificado }: Props) {
-  const [email, setEmail] = useState("");
   const [enviando, setEnviando] = useState(false);
-  const [errorEmail, setErrorEmail] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const botonRef = useRef<HTMLButtonElement>(null);
-  const idError = useId();
-  const idNota = useId();
 
-  async function enviar(valor: string) {
+  async function enviar(credencial: string) {
     setAviso(null);
-    if (!emailValido(valor)) {
-      setErrorEmail(MENSAJE_EMAIL_INVALIDO);
-      inputRef.current?.focus();
-      return;
-    }
-    setErrorEmail(null);
     setEnviando(true);
-    const resultado = await identificar(valor);
+    const resultado = await identificar(credencial);
     setEnviando(false);
 
     if (resultado.ok) {
@@ -48,18 +34,11 @@ export function PantallaEntrada({ onIdentificado }: Props) {
     }
     if (resultado.tipo === "red") {
       toast.error(MENSAJE_SIN_CONEXION, {
-        action: { label: TEXTO_REINTENTAR, onClick: () => void enviar(valor) },
+        action: { label: TEXTO_REINTENTAR, onClick: () => void enviar(credencial) },
       });
       return;
     }
-    if (resultado.status === 400) {
-      setErrorEmail(resultado.mensaje);
-      window.setTimeout(() => inputRef.current?.focus(), 0);
-    } else if (resultado.status === 429) {
-      setAviso(MENSAJE_DEMASIADOS_INTENTOS);
-    } else {
-      setAviso(resultado.mensaje);
-    }
+    setAviso(resultado.status === 429 ? MENSAJE_DEMASIADOS_INTENTOS : resultado.mensaje);
   }
 
   return (
@@ -79,55 +58,14 @@ export function PantallaEntrada({ onIdentificado }: Props) {
       </h1>
       <p className="mt-3 text-muted-foreground">Pregúntale al asistente cualquier cosa de la charla.</p>
 
-      <form
-        className="mt-8 flex flex-col gap-3"
-        noValidate
-        onSubmit={(evento) => {
-          evento.preventDefault();
-          if (!enviando) void enviar(email);
-        }}
-      >
-        <label htmlFor="email" className="text-sm font-medium">
-          Tu email de registro
-        </label>
-        <Input
-          ref={inputRef}
-          id="email"
-          name="email"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          enterKeyHint="go"
-          value={email}
-          disabled={enviando}
-          aria-invalid={errorEmail ? true : undefined}
-          aria-describedby={errorEmail ? `${idError} ${idNota}` : idNota}
-          onChange={(evento) => {
-            setEmail(evento.target.value);
-            if (errorEmail) setErrorEmail(null);
-          }}
-          onFocus={() => mostrarAlAbrirTeclado(botonRef.current)}
-          className={cn("h-12 px-3 text-base md:text-base", FOCO)}
-        />
-        {errorEmail && (
-          <p id={idError} className="text-sm text-destructive">
-            {errorEmail}
+      <div className="mt-8 flex flex-col gap-3">
+        <BotonGoogle onCredencial={(credencial) => void enviar(credencial)} deshabilitado={enviando} />
+        {enviando && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2Icon aria-hidden="true" className="size-4 animate-spin" />
+            Entrando…
           </p>
         )}
-
-        <Button
-          ref={botonRef}
-          type="submit"
-          aria-busy={enviando || undefined}
-          aria-disabled={enviando || undefined}
-          className={cn("mt-1 h-12 w-full text-base font-semibold", FOCO)}
-        >
-          {enviando && <Loader2Icon aria-hidden="true" className="size-5 animate-spin" />}
-          Entrar
-        </Button>
 
         <div aria-live="polite">
           {aviso && (
@@ -137,10 +75,10 @@ export function PantallaEntrada({ onIdentificado }: Props) {
           )}
         </div>
 
-        <p id={idNota} className="text-[13px] leading-snug text-muted-foreground">
-          Usamos tu email solo para personalizar las respuestas durante la charla.
+        <p className="text-[13px] leading-snug text-muted-foreground">
+          Usamos tu cuenta de Google solo para saber quién eres y personalizar las respuestas durante la charla.
         </p>
-      </form>
+      </div>
     </Marco>
   );
 }

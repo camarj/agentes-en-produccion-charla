@@ -24,6 +24,26 @@ describe("sesiones", () => {
     expect(s1.mensajes).toBe(0);
   });
 
+  it("reemplazar revoca las sesiones anteriores y conserva hilo y contador", async () => {
+    const vieja = await repo.crear(asistenteId);
+    await repo.incrementarMensajes(vieja.token);
+    await repo.incrementarMensajes(vieja.token);
+    const nueva = await repo.reemplazar(asistenteId);
+    expect(nueva.token).not.toBe(vieja.token);
+    expect(nueva.threadId).toBe(vieja.threadId);
+    expect(await repo.obtener(vieja.token)).toBeNull();
+    expect((await repo.obtener(nueva.token))?.asistenteId).toBe(asistenteId);
+    // El tope de mensajes sigue contando los de la sesión revocada.
+    expect(await repo.incrementarMensajes(nueva.token)).toBe(3);
+  });
+
+  it("reemplazar no toca las sesiones de otros asistentes", async () => {
+    const otroId = (await crearAsistentes(db.fuente).crearInvitado({ email: "o@e.com", nombre: "O" })).id;
+    const delOtro = await repo.crear(otroId);
+    await repo.reemplazar(asistenteId);
+    expect((await repo.obtener(delOtro.token))?.asistenteId).toBe(otroId);
+  });
+
   it("obtener devuelve la sesión o null", async () => {
     const s = await repo.crear(asistenteId);
     expect((await repo.obtener(s.token))?.asistenteId).toBe(asistenteId);

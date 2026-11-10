@@ -7,7 +7,7 @@ export function respuestaError(status: number, error: string, mensaje: string, h
 }
 
 export function noAutenticado() {
-  return respuestaError(401, "no_autenticado", "Tu sesión expiró o no es válida. Vuelve a ingresar con tu correo.");
+  return respuestaError(401, "no_autenticado", "Tu sesión expiró o no es válida. Vuelve a entrar con tu cuenta de Google.");
 }
 
 // Registra solo el tipo de error (nunca emails, nombres ni el mensaje, que
