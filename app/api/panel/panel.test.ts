@@ -190,7 +190,7 @@ describe("GET /api/panel/salud", () => {
     });
     expect(cuerpo.eventos.map((e: { texto: string; trace_id: string; nivel: string }) => [e.texto, e.trace_id, e.nivel])).toEqual([
       ["buscar_laminas agotó 3 intentos", "t-2", "falla"],
-      ["Gemini respondió 503 → respondió OpenAI", "t-1", "aviso"],
+      ["Gemini con alta demanda (503) → respaldo activo", "t-1", "aviso"],
     ]);
     expect(sondear).toHaveBeenCalled();
   });

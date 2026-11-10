@@ -21,7 +21,7 @@ describe("eventosDeTurno: qué eventos de salud deja un turno", () => {
     ]);
   });
 
-  it("respondió el respaldo: el evento dice por qué cayó Gemini (límite de uso, 503 simulado o falla real)", () => {
+  it("respondió el respaldo: el evento dice por qué se activó el respaldo (límite de uso, 503 simulado o falla real)", () => {
     const fila = { ...OK, respaldo: true, modelo: "openai/gpt-6-luna" };
     const tipos = (causa: "limite_uso" | "sobrecarga" | null) =>
       eventosDeTurno({ fila, senales: { respaldo: { modelo: "openai/gpt-6-luna", causa } }, detectorFallo: false }).map((e) => e.tipo);

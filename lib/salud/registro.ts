@@ -41,7 +41,7 @@ export function eventosDeTurno({
 
   if (fila.tipoFalla === "modelo") evento("modelos_caidos");
   else if (fila.duracionMs !== null && fila.resultado !== "bloqueo") {
-    // Respondió un modelo: Gemini (recuperado) o el respaldo (Gemini cayó).
+    // Respondió un modelo: Gemini (recuperado) o el respaldo (Gemini no respondió).
     if (senales.respaldo) evento(senales.respaldo.causa ? CAUSA_RESPALDO[senales.respaldo.causa] : "gemini_fallo");
     else recuperacion("gemini_recuperado");
     recuperacion("openai_recuperado");

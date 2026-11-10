@@ -45,14 +45,14 @@ function interruptoresBase(): EstadoInterruptores {
 function saludBase(): SaludPanel {
   return {
     servicios: [
-      { id: "gemini", nombre: "Gemini (principal)", semaforo: "ambar", detalle: "Gemini: límite de uso (429) → respondió OpenAI" },
+      { id: "gemini", nombre: "Gemini (principal)", semaforo: "ambar", detalle: "Límite de uso del proyecto alcanzado (429) → respaldo activo" },
       { id: "openai", nombre: "OpenAI (respaldo)", semaforo: "verde", detalle: "En espera o respondiendo" },
       { id: "busqueda", nombre: "Búsqueda de láminas", semaforo: "rojo", detalle: "buscar_laminas agotó 3 intentos" },
     ],
     eventos: [
-      { id: 3, hora: "2026-12-05T19:44:00.000Z", nivel: "ok", texto: "Gemini se recuperó", trace_id: null },
+      { id: 3, hora: "2026-12-05T19:44:00.000Z", nivel: "ok", texto: "Gemini responde de nuevo", trace_id: null },
       { id: 2, hora: "2026-12-05T19:43:05.000Z", nivel: "falla", texto: "buscar_laminas agotó 3 intentos", trace_id: "t-busqueda" },
-      { id: 1, hora: "2026-12-05T19:42:31.000Z", nivel: "aviso", texto: "Gemini: límite de uso (429) → respondió OpenAI ×12 en 1 min", trace_id: "t-429" },
+      { id: 1, hora: "2026-12-05T19:42:31.000Z", nivel: "aviso", texto: "Límite de uso del proyecto alcanzado (429) → respaldo activo ×12 en 1 min", trace_id: "t-429" },
     ],
   };
 }
@@ -193,16 +193,16 @@ describe("Panel del speaker", () => {
     const seccion = await screen.findByRole("region", { name: "Salud del sistema" });
     const gemini = within(seccion).getByRole("listitem", { name: /Gemini \(principal\)/ });
     expect(gemini.getAttribute("aria-label")).toBe("Gemini (principal): ámbar");
-    expect(within(gemini).getByText("Gemini: límite de uso (429) → respondió OpenAI")).toBeTruthy();
+    expect(within(gemini).getByText("Límite de uso del proyecto alcanzado (429) → respaldo activo")).toBeTruthy();
     expect(within(seccion).getByRole("listitem", { name: "Búsqueda de láminas: rojo" })).toBeTruthy();
     expect(within(seccion).getByRole("listitem", { name: "OpenAI (respaldo): verde" })).toBeTruthy();
 
     const registro = within(seccion).getByRole("list", { name: "Registro de eventos" });
     const lineas = within(registro).getAllByRole("listitem");
     expect(lineas.map((l) => l.querySelector("[data-texto]")?.textContent)).toEqual([
-      "Gemini se recuperó",
+      "Gemini responde de nuevo",
       "buscar_laminas agotó 3 intentos",
-      "Gemini: límite de uso (429) → respondió OpenAI ×12 en 1 min",
+      "Límite de uso del proyecto alcanzado (429) → respaldo activo ×12 en 1 min",
     ]);
     expect(within(lineas[0]).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
     expect(within(lineas[0]).queryByRole("link")).toBeNull();

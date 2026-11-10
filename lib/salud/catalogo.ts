@@ -19,8 +19,8 @@ export type Semaforo = "verde" | "ambar" | "rojo";
 
 // Nombre y texto de cada color del semáforo.
 export const NOMBRES_SERVICIO: Record<Servicio, { nombre: string; verde: string; ambar: string; rojo: string }> = {
-  gemini: { nombre: "Gemini (principal)", verde: "Responde", ambar: "Falla o límite de uso → responde el respaldo", rojo: "Sin respuesta" },
-  openai: { nombre: "OpenAI (respaldo)", verde: "En espera o respondiendo", ambar: "Errores aislados", rojo: "También caído → falla técnica y escalamiento" },
+  gemini: { nombre: "Gemini (principal)", verde: "Responde", ambar: "Alta demanda → respaldo activo", rojo: "No disponible" },
+  openai: { nombre: "OpenAI (respaldo)", verde: "En espera o respondiendo", ambar: "Errores aislados", rojo: "Tampoco disponible → falla técnica y escalamiento" },
   base_datos: { nombre: "Base de datos", verde: "OK", ambar: "Consultas lentas", rojo: "Errores: hay rutas que responden 500" },
   trazas: { nombre: "Trazas / observabilidad", verde: "OK", ambar: "Una traza o un voto no se pudo guardar", rojo: "Sin conexión" },
   busqueda: { nombre: "Búsqueda de láminas", verde: "OK", ambar: "Con reintentos", rojo: "Agotó los 3 intentos" },
@@ -30,11 +30,11 @@ export const NOMBRES_SERVICIO: Record<Servicio, { nombre: string; verde: string;
 };
 
 export const TIPOS_EVENTO = {
-  gemini_limite_uso: { servicio: "gemini", nivel: "aviso", texto: "Gemini: límite de uso (429) → respondió OpenAI" },
-  gemini_sobrecarga: { servicio: "gemini", nivel: "aviso", texto: "Gemini respondió 503 → respondió OpenAI" },
-  gemini_fallo: { servicio: "gemini", nivel: "aviso", texto: "Gemini falló → respondió OpenAI" },
-  gemini_recuperado: { servicio: "gemini", nivel: "ok", texto: "Gemini se recuperó" },
-  modelos_caidos: { servicio: "openai", nivel: "falla", texto: "Gemini y OpenAI no respondieron → falla técnica y escalamiento" },
+  gemini_limite_uso: { servicio: "gemini", nivel: "aviso", texto: "Límite de uso del proyecto alcanzado (429) → respaldo activo" },
+  gemini_sobrecarga: { servicio: "gemini", nivel: "aviso", texto: "Gemini con alta demanda (503) → respaldo activo" },
+  gemini_fallo: { servicio: "gemini", nivel: "aviso", texto: "Cambio al respaldo: respondió OpenAI" },
+  gemini_recuperado: { servicio: "gemini", nivel: "ok", texto: "Gemini responde de nuevo" },
+  modelos_caidos: { servicio: "openai", nivel: "falla", texto: "Ningún modelo disponible → falla técnica y escalamiento" },
   openai_recuperado: { servicio: "openai", nivel: "ok", texto: "Los modelos volvieron a responder" },
   db_lenta: { servicio: "base_datos", nivel: "aviso", texto: "Base de datos lenta (consulta de más de 1 s)" },
   db_error: { servicio: "base_datos", nivel: "falla", texto: "Error interno: una ruta respondió 500" },
@@ -81,7 +81,7 @@ export interface SaludPanel {
   eventos: EventoPanel[];
 }
 
-// «Gemini respondió 503 → respondió OpenAI ×12 en 1 min»
+// «Gemini con alta demanda (503) → respaldo activo ×12 en 1 min»
 export function textoEvento(tipo: TipoEvento, cantidad: number, primeroMs: number, ultimoMs: number): string {
   const base = TIPOS_EVENTO[tipo].texto;
   if (cantidad <= 1) return base;

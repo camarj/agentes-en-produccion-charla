@@ -291,7 +291,7 @@ Cada interruptor queda marcado en la traza, para que el antes y el después se v
 
 - **Tramos:** tres botones (Láminas 1–13 Conceptos · 14–32 Decisión y diseño · 33–40 En producción) en lugar de un selector de lámina. Al elegir un tramo, la «lámina actual» del agente pasa a la última lámina del tramo (13, 32 o 40) y cambian las preguntas sugeridas. Al empezar, la lámina actual es 1.
 - **Modelo en uso** y **Fallas técnicas** con desglose.
-- **Salud del sistema** *(PRD §15 G7)*: semáforos por servicio y registro de eventos en vivo con «ver traza». En el paso 5 de la demo, tras tocar un interruptor, se muestra el evento, se abre su traza y, al apagarlo, la línea «Gemini se recuperó».
+- **Salud del sistema** *(PRD §15 G7)*: semáforos por servicio y registro de eventos en vivo con «ver traza». En el paso 5 de la demo, tras tocar un interruptor, se muestra el evento, se abre su traza y, al apagarlo, la línea «Gemini responde de nuevo».
 - **Jev** (`/panel/jev`): un segundo modelo (TypeSafe) que juzga cada pregunta de la sala: tema, nivel de confusión y cuáles vale la pena responder en vivo.
 - **Reinicio del día:** `pnpm reiniciar:charla` deja panel y Jev en cero después del ensayo, sin tocar inscritos, láminas ni evals (ver `REINICIO-CHARLA.md`).
 - Panel y Jev están escalados para proyectarse desde una laptop de 13".
