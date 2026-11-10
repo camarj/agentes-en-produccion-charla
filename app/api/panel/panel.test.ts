@@ -200,9 +200,19 @@ describe("/api/panel/interruptores", () => {
   it("GET: valores, lámina como número y última activación", async () => {
     const cuerpo = await (await leerInterruptores()).json();
     expect(cuerpo).toEqual({
-      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 1 },
-      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
+      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 1 },
+      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, modelos_caidos: null, limite_gemini: null, base_datos_lenta: null, kill_switch: null },
     });
+  });
+
+  it("POST acepta limite_gemini y base_datos_lenta (apagados por defecto) y guarda su activación", async () => {
+    for (const clave of ["limite_gemini", "base_datos_lenta"] as const) {
+      const cuerpo = await (await cambiar({ clave, valor: "on" })).json();
+      expect(cuerpo.valores[clave]).toBe("on");
+      expect(cuerpo.ultimas_activaciones[clave]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+      expect((await cambiar({ clave, valor: "quizas" })).status).toBe(400);
+      await cambiar({ clave, valor: "off" });
+    }
   });
 
   it("POST acepta modelos_caidos (fallan el principal y el respaldo) y guarda su activación", async () => {

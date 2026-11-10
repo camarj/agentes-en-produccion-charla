@@ -7,7 +7,14 @@ import { TRAMOS } from "@/lib/tramos";
 export const LAMINA_MIN = TRAMOS[0].desde;
 export const LAMINA_MAX = TRAMOS[TRAMOS.length - 1].hasta;
 
-export const CLAVES_CAOS = ["herramienta_caida", "latencia_alta", "modelo_caido", "modelos_caidos"] as const;
+export const CLAVES_CAOS = [
+  "herramienta_caida",
+  "latencia_alta",
+  "modelo_caido",
+  "modelos_caidos",
+  "limite_gemini",
+  "base_datos_lenta",
+] as const;
 export type ClaveCaos = (typeof CLAVES_CAOS)[number];
 export type ClaveActivable = ClaveCaos | "kill_switch";
 export type ValorOnOff = "on" | "off";

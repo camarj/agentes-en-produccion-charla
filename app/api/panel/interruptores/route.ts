@@ -12,6 +12,8 @@ const esquema = z.discriminatedUnion("clave", [
   z.object({ clave: z.literal("latencia_alta"), valor: onOff }),
   z.object({ clave: z.literal("modelo_caido"), valor: onOff }),
   z.object({ clave: z.literal("modelos_caidos"), valor: onOff }),
+  z.object({ clave: z.literal("limite_gemini"), valor: onOff }),
+  z.object({ clave: z.literal("base_datos_lenta"), valor: onOff }),
   z.object({ clave: z.literal("kill_switch"), valor: onOff }),
   z.object({ clave: z.literal("lamina_actual"), valor: z.unknown() }),
 ]);
@@ -26,6 +28,8 @@ async function estado(): Promise<EstadoInterruptores> {
       latencia_alta: onOffDe(v.latencia_alta),
       modelo_caido: onOffDe(v.modelo_caido),
       modelos_caidos: onOffDe(v.modelos_caidos),
+      limite_gemini: onOffDe(v.limite_gemini),
+      base_datos_lenta: onOffDe(v.base_datos_lenta),
       kill_switch: onOffDe(v.kill_switch),
       lamina_actual: laminaValida(v.lamina_actual) ?? 1,
     },

@@ -29,6 +29,8 @@ export const VALORES_INICIALES: Record<string, string> = {
   latencia_alta: "off",
   modelo_caido: "off",
   modelos_caidos: "off",
+  limite_gemini: "off",
+  base_datos_lenta: "off",
   kill_switch: "off",
   lamina_actual: "1",
 };

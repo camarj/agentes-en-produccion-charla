@@ -3,7 +3,7 @@ import { SpanType } from "@mastra/core/observability";
 import type { ProcessInputStepArgs, ProcessInputStepResult, Processor } from "@mastra/core/processors";
 import { APICallError } from "ai";
 import { senalesDe, type CausaRespaldo } from "@/lib/salud/senales";
-import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
+import { interruptores as interruptoresPorDefecto, type InterruptoresCompletos } from "@/lib/db/interruptores";
 import {
   MODELO_PRINCIPAL,
   MODELO_RESPALDO,
@@ -68,6 +68,21 @@ export function crearErrorSobrecarga(modelo: string): APICallError {
   });
 }
 
+// Límite de uso simulado de Google (interruptor «Límite de Gemini», PRD §15
+// G7): 429 con `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}`,
+// reintentable como el real. Mastra reintenta y pasa al respaldo.
+export function crearErrorLimiteUso(modelo: string): APICallError {
+  const cuerpo = { error: { code: 429, message: "Resource has been exhausted (e.g. check quota).", status: "RESOURCE_EXHAUSTED" } };
+  return new APICallError({
+    message: "Resource exhausted (simulado por el interruptor limite_gemini)",
+    url: `simulado://${modelo}`,
+    requestBodyValues: {},
+    statusCode: 429,
+    responseBody: JSON.stringify(cuerpo),
+    isRetryable: true,
+  });
+}
+
 // Tipos y códigos de error de proveedor que indican sobrecarga o límite temporal.
 const TIPOS_SOBRECARGA = new Set(["overloaded_error", "server_error", "rate_limit_exceeded", "rate_limit_error"]);
 const PATRON_CUERPO = /"(?:type|code)"\s*:\s*"(overloaded_error|server_error|rate_limit_exceeded|rate_limit_error)"/;
@@ -107,10 +122,11 @@ export function esErrorDeSobrecarga(error: unknown): boolean {
 // Modelo (LanguageModelV2) con el mismo id que el principal que falla con un
 // error de sobrecarga (503) sin llamar al proveedor. Como el error es reintentable, Mastra aplica su
 // reintento y su cambio de modelo igual que con una caída real.
-export function crearModeloCaido(modelo: string) {
+// `error`: el error que lanza (por defecto, la sobrecarga 503).
+export function crearModeloCaido(modelo: string, error: () => APICallError = () => crearErrorSobrecarga(modelo)) {
   const [provider, ...resto] = modelo.split("/");
   const fallar = async (): Promise<never> => {
-    throw crearErrorSobrecarga(modelo);
+    throw error();
   };
   return {
     specificationVersion: "v2" as const,
@@ -128,7 +144,7 @@ interface SpanMinimo {
 }
 
 export interface OpcionesFallbackModelo {
-  interruptores?: { obtenerTodos: () => Promise<Partial<Pick<Interruptores, "modelo_caido" | "modelos_caidos">>> };
+  interruptores?: { obtenerTodos: () => Promise<Partial<Pick<InterruptoresCompletos, "modelo_caido" | "modelos_caidos" | "limite_gemini">>> };
   principal?: string;
   respaldo?: string;
 }
@@ -157,8 +173,9 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
     try {
       const v = await this.interruptores.obtenerTodos();
       const ambos = v.modelos_caidos === "on";
-      const sobrecarga = ambos || v.modelo_caido === "on";
-      return { principal: sobrecarga, ambos, causa: sobrecarga ? "sobrecarga" : null };
+      // «Modelos caídos» manda; después «Límite de Gemini» (429) y «Modelo caído» (503).
+      const causa: CausaRespaldo | null = ambos ? "sobrecarga" : v.limite_gemini === "on" ? "limite_uso" : v.modelo_caido === "on" ? "sobrecarga" : null;
+      return { principal: causa !== null, ambos, causa };
     } catch {
       return { principal: false, ambos: false, causa: null }; // si no se pueden leer, se asumen apagados
     }
@@ -186,7 +203,13 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
       return undefined;
     }
 
-    if (actual === this.principal && (await this.caos()).principal) {
+    const caos = actual === this.principal ? await this.caos() : null;
+    if (caos?.principal) {
+      if (caos.causa === "limite_uso" && !caos.ambos) {
+        span?.update({ metadata: { limite_gemini_simulado: true } });
+        const modelo = crearModeloCaido(this.principal, () => crearErrorLimiteUso(this.principal));
+        return { model: modelo as unknown as ProcessInputStepResult["model"] };
+      }
       span?.update({ metadata: { modelo_caido_simulado: true } });
       return { model: crearModeloCaido(this.principal) as unknown as ProcessInputStepResult["model"] };
     }

@@ -37,8 +37,8 @@ function metricasBase(): MetricasPanel {
 
 function interruptoresBase(): EstadoInterruptores {
   return {
-    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 12 },
-    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
+    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 12 },
+    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, limite_gemini: null, base_datos_lenta: null, kill_switch: null },
   };
 }
 
@@ -123,6 +123,20 @@ describe("Panel del speaker", () => {
     estadoInt.valores.modelo_caido = "on";
     await montar();
     expect(screen.getByText("Responde el modelo de respaldo")).toBeTruthy();
+  });
+
+  it("muestra «Límite de Gemini» y «Base de datos lenta» con los demás interruptores y los puede encender", async () => {
+    await montar();
+    const caos = screen.getByRole("region", { name: "Interruptores de caos" });
+    expect(within(caos).getByText("El modelo principal falla con un 429 de límite de uso de Google y responde el respaldo.")).toBeTruthy();
+    expect(within(caos).getByText("Cada consulta a la base de datos tarda 1,5 s más.")).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(within(caos).getByRole("switch", { name: "Límite de Gemini" }));
+    await user.click(within(caos).getByRole("switch", { name: "Base de datos lenta" }));
+    expect(posts.map((p) => p.cuerpo)).toEqual([
+      { clave: "limite_gemini", valor: "on" },
+      { clave: "base_datos_lenta", valor: "on" },
+    ]);
   });
 
   it("con «Modelo caído» apagado no aparece el aviso", async () => {
@@ -343,7 +357,7 @@ describe("Panel del speaker", () => {
       const sw = await screen.findByRole("switch", { name: "Herramienta caída" });
       expect(sw.getAttribute("aria-checked")).toBe("false");
       expect(screen.getByText(/Última activación: \d{2}:\d{2}/)).toBeTruthy();
-      expect(screen.getAllByText("Nunca activado").length).toBe(3);
+      expect(screen.getAllByText("Nunca activado").length).toBe(5);
       expect(screen.getByRole("switch", { name: "Modelos caídos" })).toBeTruthy();
       expect(screen.getByText("Fallan el principal y el respaldo: falla técnica y escalamiento.")).toBeTruthy();
       await u.click(sw);

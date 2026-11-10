@@ -6,6 +6,7 @@ import { crearSenales } from "@/lib/salud/senales";
 import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
 import {
   FallbackModelo,
+  crearErrorLimiteUso,
   crearErrorSobrecarga,
   crearModeloCaido,
   esErrorDeSobrecarga,
@@ -13,8 +14,8 @@ import {
 } from "./fallback-modelo";
 import { modeloFalso } from "./pruebas-modelo";
 
-function interruptores(modelo_caido: string, modelos_caidos = "off") {
-  return { obtenerTodos: vi.fn().mockResolvedValue({ modelo_caido, modelos_caidos }) };
+function interruptores(modelo_caido: string, modelos_caidos = "off", limite_gemini = "off") {
+  return { obtenerTodos: vi.fn().mockResolvedValue({ modelo_caido, modelos_caidos, limite_gemini }) };
 }
 
 function modelo(id: string) {
@@ -243,6 +244,49 @@ describe("FallbackModelo · modelos_caidos (fallan el principal y el respaldo)",
     await expect(a.generate("hola")).rejects.toBeTruthy();
     expect(principal.llamadas.length).toBe(0);
     expect(respaldo.llamadas.length).toBe(0);
+  }, 15_000);
+});
+
+describe("FallbackModelo · limite_gemini (límite de uso de Google, 429)", () => {
+  it("el error simulado es un 429 RESOURCE_EXHAUSTED de Google, reintentable", () => {
+    const e = crearErrorLimiteUso(MODELO_PRINCIPAL);
+    expect(APICallError.isInstance(e)).toBe(true);
+    expect(e.statusCode).toBe(429);
+    expect(e.isRetryable).toBe(true);
+    expect(JSON.parse(e.responseBody ?? "{}")).toMatchObject({ error: { code: 429, status: "RESOURCE_EXHAUSTED" } });
+    expect(esErrorDeSobrecarga(e)).toBe(true);
+  });
+
+  it("reemplaza el principal por uno que falla con 429 sin llamar al proveedor y anota la causa", async () => {
+    const p = new FallbackModelo({ interruptores: interruptores("off", "off", "on") });
+    const { span } = spanFalso();
+    const r = await p.processInputStep({ model: modelo(MODELO_PRINCIPAL), tracingContext: { currentSpan: span } } as never);
+    const reemplazo = (r as { model: ReturnType<typeof crearModeloCaido> }).model;
+    expect(`${reemplazo.provider}/${reemplazo.modelId}`).toBe(MODELO_PRINCIPAL);
+    await expect(reemplazo.doStream()).rejects.toMatchObject({ statusCode: 429 });
+    expect(span.update).toHaveBeenCalledWith({ metadata: { limite_gemini_simulado: true } });
+
+    const rc = new RequestContext();
+    const senales = crearSenales(rc);
+    await p.processInputStep({ model: modelo(MODELO_RESPALDO), requestContext: rc } as never);
+    expect(senales.respaldo).toEqual({ modelo: MODELO_RESPALDO, causa: "limite_uso" });
+  });
+
+  it("con un agente real: responde el respaldo y el principal nunca recibe la petición", async () => {
+    const principal = modeloFalso(MODELO_PRINCIPAL, () => ({ texto: "desde el principal" }));
+    const respaldo = modeloFalso(MODELO_RESPALDO, () => ({ texto: "desde el respaldo" }));
+    const a = new Agent({
+      id: "prueba-limite",
+      name: "prueba-limite",
+      instructions: "x",
+      model: [
+        { id: "principal", model: principal.modelo as never, maxRetries: 1 },
+        { id: "respaldo", model: respaldo.modelo as never, maxRetries: 0 },
+      ],
+      inputProcessors: [new FallbackModelo({ interruptores: interruptores("off", "off", "on") })],
+    });
+    expect((await a.generate("hola")).text).toBe("desde el respaldo");
+    expect(principal.llamadas.length).toBe(0);
   }, 15_000);
 });
 

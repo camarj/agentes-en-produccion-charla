@@ -17,9 +17,23 @@ describe("interruptores", () => {
       latencia_alta: "off",
       modelo_caido: "off",
       modelos_caidos: "off",
+      limite_gemini: "off",
+      base_datos_lenta: "off",
       kill_switch: "off",
       lamina_actual: "1",
     });
+    // «Límite de Gemini» y «Base de datos lenta» quedan sembrados apagados.
+    const r = await db.cliente.execute("SELECT clave, valor FROM interruptores WHERE clave IN ('limite_gemini', 'base_datos_lenta') ORDER BY clave");
+    expect(r.rows.map((f) => [f.clave, f.valor])).toEqual([["base_datos_lenta", "off"], ["limite_gemini", "off"]]);
+  });
+
+  it("avisa cada lectura y cada cambio (así la base sabe si debe simular lentitud)", async () => {
+    const vistos: string[] = [];
+    const conAviso = crearInterruptores(db.fuente, { alLeer: (v) => vistos.push(v.base_datos_lenta) });
+    await conAviso.obtenerTodos();
+    await conAviso.actualizar("base_datos_lenta", "on");
+    await conAviso.obtenerTodos();
+    expect(vistos).toEqual(["off", "on"]);
   });
 
   it("usa caché de 2 s e invalida al actualizar", async () => {
@@ -49,6 +63,8 @@ describe("interruptores", () => {
       latencia_alta: null,
       modelo_caido: null,
       modelos_caidos: null,
+      limite_gemini: null,
+      base_datos_lenta: null,
       kill_switch: null,
     });
     await db.cliente.execute(`INSERT INTO eventos_interruptor (clave, valor, creado_en) VALUES
@@ -63,6 +79,8 @@ describe("interruptores", () => {
       latencia_alta: null,
       modelo_caido: null,
       modelos_caidos: null,
+      limite_gemini: null,
+      base_datos_lenta: null,
       kill_switch: "2026-09-26T18:20:30Z",
     });
   });
