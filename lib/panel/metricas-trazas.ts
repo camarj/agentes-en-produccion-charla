@@ -14,7 +14,7 @@ export const VENTANA_TOTALES_MS = 12 * 60 * 60 * 1000;
 export const TIEMPO_MAXIMO_LECTURA_MS = 4000;
 // Mastra valida `perPage` ≤ 100 en listTraces/listTracesLight.
 const POR_PAGINA = 100;
-// 20 páginas = 2.000 turnos (26 asistentes × 30 preguntas ≈ 780).
+// 20 páginas = 2.000 turnos (26 asistentes × 30 preguntas ≈ 780; revisar en la etapa 3 para 1000+ asistentes).
 const PAGINAS_MAXIMAS = 20;
 
 type Fecha = Date | string;

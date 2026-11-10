@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { MENSAJE_DEMASIADOS_INTENTOS } from "@/lib/acceso";
-import { ERRORES_CHAT } from "@/lib/chat";
+import { ERRORES_CHAT, MAX_MENSAJES_POR_DEFECTO } from "@/lib/chat";
 
 // Página para los colaboradores de Raúl: la abren en su teléfono para mostrar
 // el QR y resolver dudas de los asistentes. Estática y sin datos personales.
@@ -38,7 +38,7 @@ const PROBLEMAS: { situacion: string; ayuda: string }[] = [
   },
   {
     situacion: `«${ERRORES_CHAT.tope}»`,
-    ayuda: "Cada persona tiene 30 preguntas. Las dudas pendientes se hacen en la sesión de preguntas.",
+    ayuda: `Cada persona tiene ${MAX_MENSAJES_POR_DEFECTO} preguntas. Las dudas pendientes se hacen en la sesión de preguntas.`,
   },
   {
     situacion: "No aparece en su pantalla de inicio",

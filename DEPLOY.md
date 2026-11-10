@@ -63,8 +63,8 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | sí | `web` (**argumento de build** y variable de entorno) | entrar con Google: el navegador muestra el botón con este ID y el servidor verifica que la credencial se emitió para él. Sin él nadie puede entrar. No es secreto | ID de cliente OAuth «Aplicación web» de Google Cloud, con el dominio público en «Orígenes de JavaScript autorizados» |
 | `PANEL_PASSWORD` | sí | `web` | Basic Auth de `/panel`. Sin ella el panel queda cerrado | de Raúl |
 | `STUDIO_URL` | sí | ambos | enlace «Abrir Mastra Studio» del panel | `https://<dominio-studio>` |
-| `PRESUPUESTO_MAX_USD` | sí | `web` | tope de gasto; al alcanzarlo el chat se pausa solo. Vacía = sin tope | `20` |
-| `MAX_MENSAJES_ASISTENTE` | no | `web` | tope de preguntas por asistente | `30` |
+| `PRESUPUESTO_MAX_USD` | sí | `web` | tope de gasto; al alcanzarlo el chat se pausa solo. Vacía = sin tope | `120` (DevFest, ~1000 personas; G6) |
+| `MAX_MENSAJES_ASISTENTE` | no | `web` | tope de preguntas por asistente. Vacía = 15 | `15` (charlas de 60 min; G6) |
 | `DATABASE_PATH`, `MASTRA_DB_URL` | no | — | **no ponerlas**; los valores por defecto apuntan a `/app/data` | — |
 | `APAGADO_ESPERA_MS` | no | `web` | espera al apagar (por defecto 8000) | — |
 | `PORT`, `HOSTNAME`, `MASTRA_HOST`, `MASTRA_STUDIO_PATH`, `PROYECTO_RAIZ`, `NODE_ENV` | — | — | las fija la imagen; **no tocar** | — |

@@ -23,6 +23,7 @@ describe("/qr (ayuda para colaboradores)", () => {
     expect(screen.queryByText(/Escribe el email/)).toBeNull();
     expect(screen.getByText(new RegExp(ERRORES_CHAT.mantenimiento.split(".")[0]))).toBeTruthy();
     expect(screen.getByText(/Llegaste al límite de preguntas/)).toBeTruthy();
+    expect(screen.getByText(/Cada persona tiene 15 preguntas/)).toBeTruthy();
   });
 
   it("no se indexa en buscadores", () => {

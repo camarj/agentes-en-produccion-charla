@@ -8,7 +8,8 @@ import type { Interruptores } from "./db/interruptores";
 // `latencia_alta` una sola búsqueda en láminas puede tardar ~16 s.
 export const TIEMPO_MAXIMO_TURNO_MS = 45_000;
 export const LARGO_MAXIMO_PREGUNTA = 1000;
-export const MAX_MENSAJES_POR_DEFECTO = 30;
+// Charlas de 60 minutos (DevFest, PRD §15 G6): 15 preguntas por persona.
+export const MAX_MENSAJES_POR_DEFECTO = 15;
 // Igual que MAX_PASOS del agente `charla` (T05).
 export const MAX_PASOS_TURNO = 5;
 
