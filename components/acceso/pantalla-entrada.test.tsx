@@ -44,6 +44,11 @@ describe("PantallaEntrada", () => {
     expect(input.getAttribute("spellcheck")).toBe("false");
   });
 
+  it("enlaza la política de privacidad", () => {
+    render(<PantallaEntrada onIdentificado={vi.fn()} />);
+    expect(screen.getByRole("link", { name: "Política de privacidad" }).getAttribute("href")).toBe("/privacidad");
+  });
+
   it("con Enter envía el email y avisa el resultado", async () => {
     fetchSimulado.mockResolvedValue(respuestaJson(200, { estado: "listo", nombre_pila: "Andrea" }));
     const onIdentificado = vi.fn();

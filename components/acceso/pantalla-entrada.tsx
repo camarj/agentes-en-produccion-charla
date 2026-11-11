@@ -2,6 +2,7 @@
 
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -138,7 +139,10 @@ export function PantallaEntrada({ onIdentificado }: Props) {
         </div>
 
         <p id={idNota} className="text-[13px] leading-snug text-muted-foreground">
-          Usamos tu email solo para personalizar las respuestas durante la charla.
+          Usamos tu email solo para personalizar las respuestas durante la charla.{" "}
+          <Link href="/privacidad" className="text-primary underline-offset-4 hover:underline">
+            Política de privacidad
+          </Link>
         </p>
       </form>
     </Marco>
