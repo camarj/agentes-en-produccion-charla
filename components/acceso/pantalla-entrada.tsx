@@ -2,6 +2,7 @@
 
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -76,7 +77,10 @@ export function PantallaEntrada({ onIdentificado }: Props) {
         </div>
 
         <p className="text-[13px] leading-snug text-muted-foreground">
-          Usamos tu cuenta de Google solo para saber quién eres y personalizar las respuestas durante la charla.
+          Usamos tu cuenta de Google solo para saber quién eres y personalizar las respuestas durante la charla.{" "}
+          <Link href="/privacidad" className="text-primary underline-offset-4 hover:underline">
+            Política de privacidad
+          </Link>
         </p>
       </div>
     </Marco>

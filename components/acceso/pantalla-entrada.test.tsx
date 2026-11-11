@@ -109,6 +109,11 @@ describe("PantallaEntrada", () => {
     expect(JSON.parse(fetchSimulado.mock.calls[1][1].body)).toEqual({ credencial: "cred-andrea" });
   });
 
+  it("enlaza la política de privacidad", () => {
+    render(<PantallaEntrada onIdentificado={vi.fn()} />);
+    expect(screen.getByRole("link", { name: "Política de privacidad" }).getAttribute("href")).toBe("/privacidad");
+  });
+
   it("sin client id configurado avisa que el acceso con Google no está disponible", async () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "");
     render(<PantallaEntrada onIdentificado={vi.fn()} />);
