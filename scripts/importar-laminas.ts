@@ -95,7 +95,7 @@ async function principal() {
   try {
     await importarLaminas(async () => cliente, laminas);
   } finally {
-    cliente.close();
+    await cliente.close();
   }
   console.table(
     laminas.map((l) => ({

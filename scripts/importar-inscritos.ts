@@ -150,7 +150,7 @@ async function principal() {
   try {
     r = await importarInscritos(async () => cliente, filas);
   } finally {
-    cliente.close();
+    await cliente.close();
   }
   // Solo conteos y números de fila: nunca emails ni nombres.
   console.log(`Filas leídas: ${filas.length}`);

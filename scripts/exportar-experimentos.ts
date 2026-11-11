@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { createClient, type Client } from "@libsql/client";
+import { abrirCliente } from "../lib/db/client";
 import { urlArchivo } from "../lib/rutas";
 import { ejecutarCli } from "./comun";
 
@@ -157,15 +158,15 @@ export function revisarDatosPersonales(texto: string, asistentes: { email: strin
   };
 }
 
+// Asistentes de la base de charla (Postgres, DATABASE_URL); null si no está configurada.
 async function asistentesReales(): Promise<{ email: string; nombre: string }[] | null> {
-  const url = urlArchivo(process.env.DATABASE_PATH ?? "./data/charla.db");
-  if (!fs.existsSync(url.slice("file:".length))) return null;
-  const c = createClient({ url });
+  if (!process.env.DATABASE_URL?.trim()) return null;
+  const c = abrirCliente(undefined, { max: 1 });
   try {
     const r = await c.execute("SELECT email, nombre FROM asistentes");
     return r.rows.map((f) => ({ email: String(f.email), nombre: String(f.nombre) }));
   } finally {
-    c.close();
+    await c.close();
   }
 }
 

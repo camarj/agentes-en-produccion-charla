@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Client } from "@libsql/client";
-import { crearCliente } from "../lib/db/client";
+import { createClient, type Client } from "@libsql/client";
 import { urlArchivo } from "../lib/rutas";
 import { ejecutarCli } from "./comun";
 import { columnasDe, TABLAS, type Fila, type Paquete, type Tabla } from "./exportar-experimentos";
@@ -178,7 +177,7 @@ async function principal() {
 
   console.log(`Base de destino: ${rutaDb}`);
   console.log(`Dataset a importar: «${paquete.meta.destino.datasetNombre}» (${paquete.meta.destino.datasetId}), ${paquete.meta.experimentos.length} experimentos`);
-  const cliente = crearCliente(url);
+  const cliente = createClient({ url, concurrency: 1, timeout: 5000 });
   try {
     const plan = await planificarImportacion(cliente, paquete);
     imprimirPlan(plan);

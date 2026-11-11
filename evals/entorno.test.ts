@@ -30,15 +30,23 @@ describe("perfilesDelDataset", () => {
 });
 
 describe("variablesDeEntorno", () => {
-  it("siempre apunta charla.db a la carpeta temporal; mastra.db solo si se pide", () => {
-    expect(variablesDeEntorno({ dir: "/tmp/x" }, {})).toEqual({ DATABASE_PATH: "/tmp/x/charla.db" });
-    expect(variablesDeEntorno({ dir: "/tmp/x" }, { EVALS_MASTRA_DB_PATH: "/tmp/m/mastra.db" })).toEqual({
-      DATABASE_PATH: "/tmp/x/charla.db",
+  const BASE = "postgres://u:p@db:5432/charla";
+  it("siempre apunta la base de la app a un esquema temporal propio; mastra.db solo si se pide", () => {
+    const esquema = encodeURIComponent("-c search_path=evals_charla_evals_x");
+    expect(variablesDeEntorno({ dir: "/tmp/charla-evals-x" }, { DATABASE_URL: BASE })).toEqual({ DATABASE_URL: `${BASE}?options=${esquema}` });
+    expect(variablesDeEntorno({ dir: "/tmp/charla-evals-x" }, { DATABASE_URL: BASE, EVALS_MASTRA_DB_PATH: "/tmp/m/mastra.db" })).toEqual({
+      DATABASE_URL: `${BASE}?options=${esquema}`,
       MASTRA_DB_URL: "file:/tmp/m/mastra.db",
     });
   });
-  it("nunca deja DATABASE_PATH apuntando a la base real aunque venga en el entorno", () => {
-    expect(variablesDeEntorno({ dir: "/tmp/x" }, { DATABASE_PATH: "./data/charla.db" }).DATABASE_PATH).toBe("/tmp/x/charla.db");
+  it("con el socket de Cloud SQL agrega el esquema a los parámetros que ya trae", () => {
+    const url = "postgres://u:p@/charla?host=/cloudsql/p:r:i";
+    expect(variablesDeEntorno({ dir: "/tmp/y" }, { DATABASE_URL: url }).DATABASE_URL).toBe(
+      `${url}&options=${encodeURIComponent("-c search_path=evals_y")}`,
+    );
+  });
+  it("sin DATABASE_URL falla con un mensaje claro en vez de tocar otra base", () => {
+    expect(() => variablesDeEntorno({ dir: "/tmp/x" }, {})).toThrow(/DATABASE_URL/);
   });
 });
 
@@ -68,7 +76,7 @@ describe("poblarBase", () => {
       expect((await crearLaminas(t.fuente).buscar("zumbacalabaza")).length).toBeGreaterThan(0);
       expect(r.laminas).toBe(3);
     } finally {
-      t.cerrar();
+      await t.cerrar();
     }
   });
 });

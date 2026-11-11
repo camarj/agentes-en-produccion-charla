@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { migrar } from "./migrate";
+import type { Cliente, Sentencia } from "./client";
+import { CERROJO_MIGRACIONES, migrar } from "./migrate";
 import { crearDbTemporal } from "./prueba";
 
 describe("migraciones", () => {
-  let cerrar: () => void = () => {};
+  let cerrar: () => Promise<void> = async () => {};
   afterEach(() => cerrar());
 
   it("aplica el esquema y es idempotente", async () => {
@@ -12,22 +16,76 @@ describe("migraciones", () => {
     const segunda = await migrar(db.cliente);
     expect(segunda).toEqual([]);
     const tablas = await db.cliente.execute(
-      "SELECT name FROM sqlite_master WHERE type IN ('table') ORDER BY name",
+      "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name",
     );
     const nombres = tablas.rows.map((r) => r.name);
-    for (const t of ["asistentes", "sesiones", "escalamientos", "interruptores", "eventos_interruptor", "laminas", "laminas_fts", "feedback", "turnos", "eventos_salud", "_migraciones"]) {
+    for (const t of ["asistentes", "sesiones", "escalamientos", "interruptores", "eventos_interruptor", "laminas", "feedback", "presupuesto", "jev_analisis", "turnos", "eventos_salud", "_migraciones"]) {
       expect(nombres).toContain(t);
     }
     const aplicadas = await db.cliente.execute("SELECT nombre FROM _migraciones");
-    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_init.sql", "002_feedback.sql", "003_presupuesto.sql", "004_modelos_caidos.sql", "005_jev.sql", "006_sesion_unica.sql", "007_turnos.sql", "008_eventos_salud.sql", "009_limite_gemini_db_lenta.sql"]);
+    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_base_postgres.sql"]);
   });
 
-  it("activa foreign_keys y WAL al abrir", async () => {
+  it("siembra los interruptores apagados, la lámina 1 y el presupuesto en cero", async () => {
     const db = await crearDbTemporal();
     cerrar = db.cerrar;
-    const fk = await db.cliente.execute("PRAGMA foreign_keys");
-    expect(Number(fk.rows[0][0])).toBe(1);
-    const modo = await db.cliente.execute("PRAGMA journal_mode");
-    expect(String(modo.rows[0][0]).toLowerCase()).toBe("wal");
+    const r = await db.cliente.execute("SELECT clave, valor FROM interruptores ORDER BY clave");
+    expect(Object.fromEntries(r.rows.map((f) => [f.clave, f.valor]))).toEqual({
+      base_datos_lenta: "off", herramienta_caida: "off", kill_switch: "off", lamina_actual: "1",
+      latencia_alta: "off", limite_gemini: "off", modelo_caido: "off", modelos_caidos: "off",
+    });
+    const p = await db.cliente.execute("SELECT coste_usd FROM presupuesto WHERE id = 1");
+    expect(p.rows[0].coste_usd).toBe(0);
+  });
+
+  it("aplica las claves foráneas (borrar un asistente borra sus sesiones)", async () => {
+    const db = await crearDbTemporal();
+    cerrar = db.cerrar;
+    await db.cliente.execute("INSERT INTO asistentes (id, email, nombre, origen) VALUES ('a', 'a@x.com', 'A', 'invitado')");
+    await db.cliente.execute("INSERT INTO sesiones (token, asistente_id, thread_id) VALUES ('t', 'a', 'h')");
+    await expect(db.cliente.execute("INSERT INTO sesiones (token, asistente_id, thread_id) VALUES ('u', 'nadie', 'h')")).rejects.toThrow();
+    await db.cliente.execute("DELETE FROM asistentes WHERE id = 'a'");
+    expect((await db.cliente.execute("SELECT count(*) AS n FROM sesiones")).rows[0].n).toBe(0);
+  });
+
+  it("toma el cerrojo consultivo antes de leer o aplicar migraciones", async () => {
+    const vistas: string[] = [];
+    const falso: Cliente = {
+      execute: async () => ({ rows: [], rowsAffected: 0 }),
+      batch: async () => [],
+      close: async () => {},
+      transaccion: async (fn) =>
+        fn({
+          execute: async (s: Sentencia) => {
+            vistas.push(typeof s === "string" ? s : `${s.sql} ${JSON.stringify(s.args)}`);
+            return { rows: [], rowsAffected: 0 };
+          },
+        }),
+    };
+    await migrar(falso);
+    expect(vistas[0]).toBe(`SELECT pg_advisory_xact_lock(?) [${CERROJO_MIGRACIONES}]`);
+    expect(vistas.some((v) => v.includes("CREATE TABLE asistentes"))).toBe(true);
+  });
+
+  it("dos arranques a la vez: uno migra y el otro no encuentra nada pendiente", async () => {
+    const vacio = await crearDbTemporal({ migrada: false });
+    cerrar = vacio.cerrar;
+    const [a, b] = await Promise.all([migrar(vacio.cliente), migrar(vacio.cliente)]);
+    expect([a, b].map((x) => x.length).sort()).toEqual([0, 1]);
+  });
+
+  it("si una migración falla no queda ninguna aplicada a medias", async () => {
+    const vacio = await crearDbTemporal({ migrada: false });
+    cerrar = vacio.cerrar;
+    const carpeta = fs.mkdtempSync(path.join(os.tmpdir(), "charla-migraciones-"));
+    try {
+      fs.writeFileSync(path.join(carpeta, "001_ok.sql"), "CREATE TABLE uno (id INTEGER);");
+      fs.writeFileSync(path.join(carpeta, "002_mala.sql"), "CREATE TABLE dos (id INTEGER); SELECT * FROM no_existe;");
+      await expect(migrar(vacio.cliente, carpeta)).rejects.toThrow();
+      const r = await vacio.cliente.execute("SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('uno', 'dos', '_migraciones')");
+      expect(r.rows[0].n).toBe(0);
+    } finally {
+      fs.rmSync(carpeta, { recursive: true, force: true });
+    }
   });
 });

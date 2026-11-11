@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import type { Row } from "@libsql/client";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila as Row, type FuenteDb } from "./client";
 import { numero, texto } from "./tipos";
 
 export interface Sesion {
@@ -29,7 +28,7 @@ export function crearSesiones(fuente: FuenteDb = db) {
     const c = await fuente();
     const r = await c.execute({
       sql: `INSERT INTO sesiones (token, asistente_id, thread_id)
-            VALUES (?, ?, COALESCE((SELECT thread_id FROM sesiones WHERE asistente_id = ? ORDER BY rowid DESC LIMIT 1), ?))
+            VALUES (?, ?, COALESCE((SELECT thread_id FROM sesiones WHERE asistente_id = ? ORDER BY orden DESC LIMIT 1), ?))
             RETURNING *`,
       args: [crypto.randomBytes(32).toString("base64url"), asistenteId, asistenteId, `charla-${asistenteId}`],
     });
@@ -43,12 +42,12 @@ export function crearSesiones(fuente: FuenteDb = db) {
     const [, creada] = await c.batch(
       [
         {
-          sql: "UPDATE sesiones SET revocada_en = datetime('now') WHERE asistente_id = ? AND revocada_en IS NULL",
+          sql: "UPDATE sesiones SET revocada_en = ahora_utc() WHERE asistente_id = ? AND revocada_en IS NULL",
           args: [asistenteId],
         },
         {
           sql: `INSERT INTO sesiones (token, asistente_id, thread_id)
-                VALUES (?, ?, COALESCE((SELECT thread_id FROM sesiones WHERE asistente_id = ? ORDER BY rowid DESC LIMIT 1), ?))
+                VALUES (?, ?, COALESCE((SELECT thread_id FROM sesiones WHERE asistente_id = ? ORDER BY orden DESC LIMIT 1), ?))
                 RETURNING *`,
           args: [crypto.randomBytes(32).toString("base64url"), asistenteId, asistenteId, `charla-${asistenteId}`],
         },

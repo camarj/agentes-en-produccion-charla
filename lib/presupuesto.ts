@@ -102,7 +102,7 @@ export function crearPresupuesto(fuente: FuenteDb = db) {
     const c = await fuente();
     await c.execute({
       sql: `INSERT INTO presupuesto (id, coste_usd) VALUES (1, ?)
-        ON CONFLICT(id) DO UPDATE SET coste_usd = coste_usd + excluded.coste_usd, actualizado_en = datetime('now')`,
+        ON CONFLICT(id) DO UPDATE SET coste_usd = presupuesto.coste_usd + excluded.coste_usd, actualizado_en = ahora_utc()`,
       args: [usd],
     });
   }

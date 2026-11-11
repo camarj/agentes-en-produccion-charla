@@ -1,5 +1,6 @@
-import type { Client } from "@libsql/client";
-import { abrirCliente, urlPorDefecto, type FuenteDb } from "../lib/db/client";
+// mastra.db sigue en SQLite hasta T3 (S4): solo esa parte usa @libsql/client.
+import { createClient, type Client } from "@libsql/client";
+import { urlPorDefecto, type Cliente, type FuenteDb } from "../lib/db/client";
 import { esTrazaDeEval } from "../lib/origen-eval";
 import { urlArchivo } from "../lib/rutas";
 import { crearAlmacenamiento } from "../src/mastra/storage";
@@ -37,7 +38,7 @@ export const VALORES_INICIALES: Record<string, string> = {
 
 const numero = (v: unknown) => Number(v ?? 0);
 
-// ─── charla.db ───────────────────────────────────────────────────────────────
+// ─── charla (Postgres) ───────────────────────────────────────────────────────────────
 
 export interface ResultadoCharlaDb {
   sesiones: number;
@@ -54,7 +55,7 @@ export interface ResultadoCharlaDb {
   interruptoresCambiados: number;
 }
 
-async function contarCharlaDb(c: Client): Promise<ResultadoCharlaDb> {
+async function contarCharlaDb(c: Cliente): Promise<ResultadoCharlaDb> {
   const r = await c.execute(`SELECT
     (SELECT count(*) FROM sesiones) AS sesiones,
     (SELECT count(*) FROM feedback) AS votos,
@@ -99,9 +100,9 @@ export async function reiniciarCharlaDb(fuente: FuenteDb, { aplicar }: { aplicar
       "DELETE FROM turnos",
       "DELETE FROM eventos_salud",
       "DELETE FROM asistentes WHERE origen = 'invitado'",
-      "UPDATE presupuesto SET coste_usd = 0, actualizado_en = datetime('now') WHERE id = 1",
+      "UPDATE presupuesto SET coste_usd = 0, actualizado_en = ahora_utc() WHERE id = 1",
       ...Object.entries(VALORES_INICIALES).map(([clave, valor]) => ({
-        sql: "UPDATE interruptores SET valor = ?, actualizado_en = datetime('now') WHERE clave = ?",
+        sql: "UPDATE interruptores SET valor = ?, actualizado_en = ahora_utc() WHERE clave = ?",
         args: [valor, clave],
       })),
     ],
@@ -220,6 +221,14 @@ export async function limpiarTrazas(store: StoreObservabilidad, { aplicar }: { a
 
 // Copia consistente de una base SQLite junto al original (VACUUM INTO funciona
 // con la app abierta). Devuelve la ruta del respaldo, o null si no es un archivo.
+// Solo mastra.db: la base de charla en Cloud SQL se respalda con sus backups
+// automáticos o `gcloud sql backups create` antes de reiniciar.
+async function abrirLibsql(url: string): Promise<Client> {
+  const c = createClient({ url, concurrency: 1, timeout: 5000 });
+  await c.execute("PRAGMA busy_timeout=5000");
+  return c;
+}
+
 export async function respaldar(c: Client, url: string, marca: string): Promise<string | null> {
   if (!url.startsWith("file:")) return null;
   const destino = url.slice("file:".length).replace(/(\.db)?$/, `.respaldo-${marca}.db`);
@@ -231,9 +240,11 @@ export async function respaldar(c: Client, url: string, marca: string): Promise<
 
 function hostDe(url: string): string {
   try {
-    return new URL(url).host;
+    const u = new URL(url);
+    return u.host || u.searchParams.get("host") || "(socket local)";
   } catch {
-    return "(URL no válida)";
+    // postgres://usuario:clave@/charla?host=/cloudsql/… (socket de Cloud SQL)
+    return /[?&]host=([^&]+)/.exec(url)?.[1] ?? "(URL no válida)";
   }
 }
 
@@ -242,18 +253,17 @@ async function principal() {
   const urlMastra = urlArchivo(process.env.MASTRA_DB_URL ?? "file:./data/mastra.db");
   const urlObs = process.env.OBSERVABILIDAD_DATABASE_URL?.trim();
   // Destinos, para confirmar antes de aplicar (del Postgres solo el host, nunca la contraseña).
-  console.log(`Bases: charla.db → ${urlPorDefecto()} · mastra.db → ${urlMastra} · trazas → ${urlObs ? hostDe(urlObs) : "sin Postgres"}`);
+  console.log(`Bases: charla → ${hostDe(urlPorDefecto())} · mastra.db → ${urlMastra} · trazas → ${urlObs ? hostDe(urlObs) : "sin Postgres"}`);
   console.log(aplicar ? "Reiniciando datos para la charla…" : "Simulación (sin --si no se cambia nada):");
 
-  // 0. Respaldo de las dos bases SQLite antes de cambiar nada (las trazas de Neon no se respaldan).
+  // 0. Respaldo de mastra.db antes de cambiar nada. La base de charla (Cloud SQL)
+  // y las trazas de Neon no se respaldan aquí: usa los backups de Cloud SQL.
   if (aplicar) {
     const marca = new Date().toISOString().replace(/[:.]/g, "-");
-    const respaldoCharla = await abrirBaseMigrada();
-    const respaldoMastra = await abrirCliente(urlMastra);
+    const respaldoMastra = await abrirLibsql(urlMastra);
     try {
-      console.log(`  Respaldo: ${await respaldar(respaldoCharla, urlPorDefecto(), marca)} · ${await respaldar(respaldoMastra, urlMastra, marca)}`);
+      console.log(`  Respaldo: ${await respaldar(respaldoMastra, urlMastra, marca)} (charla: usa los backups de Cloud SQL)`);
     } finally {
-      respaldoCharla.close();
       respaldoMastra.close();
     }
   }
@@ -270,7 +280,7 @@ async function principal() {
   }
 
   // 2. Memoria del agente (mastra.db).
-  const mastraDb = await abrirCliente(urlMastra);
+  const mastraDb = await abrirLibsql(urlMastra);
   try {
     const m = await limpiarMemoria(mastraDb, { aplicar });
     console.log(`  Memoria: ${m.hilos} conversaciones, ${m.mensajes} mensajes, ${m.recursos} perfiles de memoria, ${m.puntajes} puntajes en vivo`);
@@ -278,17 +288,17 @@ async function principal() {
     mastraDb.close();
   }
 
-  // 3. charla.db (una transacción).
+  // 3. Base de charla (una transacción).
   const cliente = await abrirBaseMigrada();
   try {
     const r = await reiniciarCharlaDb(async () => cliente, { aplicar });
     console.log(
-      `  charla.db: ${r.sesiones} sesiones, ${r.votos} votos, ${r.escalamientos} escalamientos, ${r.analisisJev} análisis de Jev, ` +
+      `  charla: ${r.sesiones} sesiones, ${r.votos} votos, ${r.escalamientos} escalamientos, ${r.analisisJev} análisis de Jev, ` +
         `${r.eventosInterruptor} eventos de interruptores, ${r.turnos} turnos, ${r.eventosSalud} eventos de salud, ${r.invitados} invitados, coste $${r.costeUsd.toFixed(4)}, ` +
         `${r.interruptoresCambiados} interruptores fuera de su valor inicial`,
     );
   } finally {
-    cliente.close();
+    await cliente.close();
   }
 
   console.log(aplicar ? "Listo: paneles en cero." : "Para aplicarlo: pnpm reiniciar:charla --si");

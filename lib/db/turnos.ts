@@ -1,4 +1,3 @@
-import type { InStatement, Row } from "@libsql/client";
 import {
   VENTANA_LATENCIA_MS,
   VENTANA_TOTALES_MS,
@@ -6,7 +5,7 @@ import {
   type ModeloEnUso,
   type TipoFalla,
 } from "@/lib/panel/metricas-trazas";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila as Row, type FuenteDb, type Sentencia } from "./client";
 import { numero, textoONulo } from "./tipos";
 
 // Turnos de chat terminados (PRD §15 G7). La ruta de chat escribe una fila
@@ -64,7 +63,7 @@ export function crearTurnos(fuente: FuenteDb = db) {
     const c = await fuente();
     const desde = ahora - VENTANA_TOTALES_MS;
     const desdeHora = ahora - VENTANA_LATENCIA_MS;
-    const consultas: InStatement[] = [
+    const consultas: Sentencia[] = [
       {
         sql: `SELECT COUNT(*) AS turnos,
             COALESCE(SUM(CASE WHEN respaldo = 1 AND iniciado_ms >= ? THEN 1 ELSE 0 END), 0) AS respaldo_hora,

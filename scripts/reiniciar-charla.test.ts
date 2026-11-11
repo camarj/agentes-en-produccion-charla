@@ -32,7 +32,7 @@ describe("reiniciarCharlaDb", () => {
         "INSERT INTO turnos (iniciado_ms, duracion_ms, resultado, respaldo) VALUES (1, 2000, 'ok', 0)",
         "INSERT INTO eventos_salud (tipo, servicio, nivel, primero_ms, ultimo_ms) VALUES ('db_error', 'base_datos', 'falla', 1, 1)",
         `INSERT INTO jev_analisis (trace_id, turno_en, pregunta, tema, tema_confianza, intencion, intencion_confianza, confusion, confusion_confianza, valor, valor_confianza, latencia_ms, modelo)
-         VALUES ('tr1', datetime('now'), '¿?', 'evals', 1, 'understand_concept', 1, 0, 1, 0, 1, 250, 'jev')`,
+         VALUES ('tr1', ahora_utc(), '¿?', 'evals', 1, 'understand_concept', 1, 0, 1, 0, 1, 250, 'jev')`,
       ],
       "write",
     );

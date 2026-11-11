@@ -81,7 +81,7 @@ export function crearInterruptores(fuente: FuenteDb = db, { alLeer }: { alLeer?:
       [
         {
           sql: `INSERT INTO interruptores (clave, valor) VALUES (?, ?)
-            ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado_en = datetime('now')`,
+            ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado_en = ahora_utc()`,
           args: [clave, valor],
         },
         { sql: "INSERT INTO eventos_interruptor (clave, valor) VALUES (?, ?)", args: [clave, valor] },

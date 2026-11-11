@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { FuenteDb } from "@/lib/db/client";
+import { abrirCliente, type FuenteDb } from "@/lib/db/client";
 import { crearAsistentes, type PerfilPrivado } from "@/lib/db/asistentes";
 import { crearInterruptores } from "@/lib/db/interruptores";
 import { migrar } from "@/lib/db/migrate";
@@ -9,7 +9,7 @@ import { extraerLaminas, importarLaminas } from "@/scripts/importar-laminas";
 import type { DatasetCharla } from "./dataset";
 
 // Entorno aislado de una corrida de evals (decisión de Raúl, 2026-09-23): el
-// runner SIEMPRE usa su propia charla.db temporal, también en producción. Ahí
+// runner SIEMPRE usa su propia base temporal (un esquema aparte), también en producción. Ahí
 // viven los asistentes de prueba, los interruptores de caos, los
 // escalamientos, el coste y los contadores. Nunca se toca la base de la charla.
 
@@ -39,14 +39,51 @@ export function prepararDirectorio(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "charla-evals-"));
 }
 
+// Esquema temporal de la corrida dentro de la base Postgres de DATABASE_URL
+// (con Postgres ya no hay archivo temporal: se aísla por esquema).
+export function nombreEsquema(dir: string): string {
+  return `evals_${path.basename(dir).replace(/[^a-zA-Z0-9]/g, "_").toLowerCase()}`;
+}
+
+// La misma URL con `search_path` fijado al esquema de la corrida.
+export function urlConEsquema(url: string, esquema: string): string {
+  const opciones = encodeURIComponent(`-c search_path=${esquema}`);
+  return `${url}${url.includes("?") ? "&" : "?"}options=${opciones}`;
+}
+
+function urlBase(entorno: NodeJS.ProcessEnv | Record<string, string | undefined>): string {
+  const url = entorno.DATABASE_URL?.trim();
+  if (!url) throw new Error("Los evals necesitan DATABASE_URL (Postgres): crean ahí un esquema temporal y lo borran al terminar");
+  return url;
+}
+
+// Crea (o borra) el esquema temporal con una conexión aparte, antes de fijar el entorno.
+export async function crearEsquemaTemporal(dir: string, entorno: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const c = abrirCliente(urlBase(entorno), { max: 1 });
+  try {
+    await c.execute(`CREATE SCHEMA IF NOT EXISTS "${nombreEsquema(dir)}"`);
+  } finally {
+    await c.close();
+  }
+}
+
+export async function borrarEsquemaTemporal(dir: string, url: string): Promise<void> {
+  const c = abrirCliente(url, { max: 1 });
+  try {
+    await c.execute(`DROP SCHEMA IF EXISTS "${nombreEsquema(dir)}" CASCADE`);
+  } finally {
+    await c.close();
+  }
+}
+
 // Variables que el proceso del runner (y la app que levanta para R04) deben
 // tener ANTES de abrir cualquier conexión:
-// - DATABASE_PATH: la charla.db temporal, siempre.
+// - DATABASE_URL: la base Postgres con `search_path` en el esquema temporal, siempre.
 // - MASTRA_DB_URL: solo si se pide con EVALS_MASTRA_DB_PATH (pruebas locales).
 //   Si no, se usa el mastra.db de siempre, el que lee Studio (en producción,
 //   el volumen compartido /app/data).
 export function variablesDeEntorno({ dir }: { dir: string }, entorno: NodeJS.ProcessEnv | Record<string, string | undefined>): Record<string, string> {
-  const variables: Record<string, string> = { DATABASE_PATH: path.join(dir, "charla.db") };
+  const variables: Record<string, string> = { DATABASE_URL: urlConEsquema(urlBase(entorno), nombreEsquema(dir)) };
   const mastra = entorno.EVALS_MASTRA_DB_PATH?.trim();
   if (mastra) variables.MASTRA_DB_URL = `file:${path.resolve(mastra)}`;
   return variables;

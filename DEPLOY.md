@@ -65,7 +65,8 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 | `STUDIO_URL` | sí | ambos | enlace «Abrir Mastra Studio» del panel y enlaces «ver traza» del registro de eventos (`<STUDIO_URL>/traces?traceId=…`) | `https://<dominio-studio>` |
 | `PRESUPUESTO_MAX_USD` | sí | `web` | tope de gasto; al alcanzarlo el chat se pausa solo. Vacía = sin tope | `120` (DevFest, ~1000 personas; G6) |
 | `MAX_MENSAJES_ASISTENTE` | no | `web` | tope de preguntas por asistente. Vacía = 15 | `15` (charlas de 60 min; G6) |
-| `DATABASE_PATH`, `MASTRA_DB_URL` | no | — | **no ponerlas**; los valores por defecto apuntan a `/app/data` | — |
+| `DATABASE_URL` | sí | ambos | base de la app (asistentes, sesiones, cola, votos, interruptores, presupuesto, turnos, Jev) en **PostgreSQL** (Cloud SQL). Reemplaza a `DATABASE_PATH` y `charla.db`. Las migraciones se aplican al arrancar con un cerrojo consultivo (varios contenedores a la vez no chocan). En Cloud Run: `postgres://USUARIO:CLAVE@/charla?host=/cloudsql/PROYECTO:REGION:INSTANCIA` (detalle en T4) | URL `postgres://` de Raúl |
+| `MASTRA_DB_URL` | no | — | **no ponerla**; el valor por defecto apunta a `/app/data/mastra.db` (Mastra pasa a Postgres en T3) | — |
 | `APAGADO_ESPERA_MS` | no | `web` | espera al apagar (por defecto 8000) | — |
 | `PORT`, `HOSTNAME`, `MASTRA_HOST`, `MASTRA_STUDIO_PATH`, `PROYECTO_RAIZ`, `NODE_ENV` | — | — | las fija la imagen; **no tocar** | — |
 | `EVALS_MASTRA_DB_PATH`, `EVALS_LAMINAS_HTML` | — | — | **no poner**: solo pruebas locales | — |
@@ -86,7 +87,7 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 ## 5. Primer despliegue, paso a paso
 
 1. Crea los dos servicios (§2) con sus variables (§3) y dominios (§4). Despliega `web` y luego `studio`.
-2. **Espera ~2 minutos** tras el primer arranque: Mastra prepara sus tablas en Neon en segundo plano. Los votos 👍/👎 que lleguen antes se guardan en `charla.db` pero no llegan a Studio.
+2. **Espera ~2 minutos** tras el primer arranque: Mastra prepara sus tablas en Neon en segundo plano. Los votos 👍/👎 que lleguen antes se guardan en la base de la app (`DATABASE_URL`) pero no llegan a Studio.
 3. Comprueba:
    - `https://<dominio-app>/` → 200 (pantalla negra con el logo de Inteliside).
    - `https://<dominio-app>/api/sesion` → `{"autenticado":false,...}`.
@@ -122,7 +123,7 @@ pnpm evals                                   # instrucciones vigentes 1.2.1, dat
 pnpm evals -- --instrucciones 1.1.0          # versión anterior, mismo dataset (para Compare)
 ```
 
-- Ambos usan una `charla.db` **temporal** propia: no tocan asistentes, interruptores, cola ni gasto reales. Sus trazas llevan `origen: eval` y el panel no las cuenta.
+- Ambos usan una base **temporal** propia (un esquema `evals_*` en `DATABASE_URL`, que se borra al terminar): no tocan asistentes, interruptores, cola ni gasto reales. Sus trazas llevan `origen: eval` y el panel no las cuenta.
 - Si R04 falla por falta de build de Next en el contenedor, repite con `--ruta proceso`.
 - **Veredicto esperado:** puede salir `failed`. La última corrida de producción del 2026-09-25 dio 32/40 con un solo gate en rojo (`gate_bloqueo`, por el tope del clasificador de alcance, que luego subió de 3 s a 5 s); el resultado vigente está en `.claude/sessions/ITERACION-EVALS.md`. **La demo muestra el veredicto tal como salga, aunque sea `failed`** (PRD §11). No es un bloqueo para desplegar ni para `v1-estable`. No ajustes instrucciones, umbrales ni guardrails para que pase. Reporta el resumen de consola a Raúl.
 - Solo la corrida final de cada paso va a producción: no repitas corridas para «mejorar» el número.

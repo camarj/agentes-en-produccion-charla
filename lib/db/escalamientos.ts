@@ -1,5 +1,4 @@
-import type { Row } from "@libsql/client";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila as Row, type FuenteDb } from "./client";
 import { numero, texto, textoONulo } from "./tipos";
 
 export type MotivoEscalamiento =
@@ -42,6 +41,14 @@ export function limpiarPregunta(pregunta: string): string {
   return pregunta.trim().replace(/\s+/g, " ");
 }
 
+// En Postgres (READ COMMITTED) dos inserciones simultáneas podrían pasar el
+// NOT EXISTS a la vez: un cerrojo consultivo por asistente las pone en fila
+// dentro de la transacción del batch, como hacía SQLite con un solo escritor.
+const cerrojoAsistente = (asistenteId: string) => ({
+  sql: "SELECT pg_advisory_xact_lock(1, hashtext(?))",
+  args: [asistenteId],
+});
+
 function aEscalamiento(f: Row): Escalamiento {
   return {
     id: numero(f, "id"),
@@ -55,7 +62,7 @@ function aEscalamiento(f: Row): Escalamiento {
 }
 
 export function crearEscalamientos(fuente: FuenteDb = db) {
-  // Deduplica en una sola sentencia (atómica): misma pregunta pendiente del
+  // Deduplica en una sola sentencia (atómica, con el cerrojo del asistente): misma pregunta pendiente del
   // mismo asistente, comparando sin mayúsculas ni espacios extra.
   async function crear(datos: NuevoEscalamiento): Promise<ResultadoCrearEscalamiento> {
     const c = await fuente();
@@ -63,8 +70,9 @@ export function crearEscalamientos(fuente: FuenteDb = db) {
     const existente = `SELECT id FROM escalamientos
       WHERE asistente_id = ? AND estado = 'pendiente' AND lower(pregunta) = lower(?)
       ORDER BY id LIMIT 1`;
-    const [insertada, previa] = await c.batch(
+    const [, insertada, previa] = await c.batch(
       [
+        cerrojoAsistente(datos.asistenteId),
         {
           sql: `INSERT INTO escalamientos (asistente_id, pregunta, motivo, trace_id)
             SELECT ?, ?, ?, ? WHERE NOT EXISTS (${existente}) RETURNING id`,
@@ -87,8 +95,9 @@ export function crearEscalamientos(fuente: FuenteDb = db) {
     const existente = `SELECT id FROM escalamientos
       WHERE asistente_id = ? AND estado = 'pendiente' AND lower(pregunta) = lower(?)
       ORDER BY id LIMIT 1`;
-    const [insertada, previa] = await c.batch(
+    const [, insertada, previa] = await c.batch(
       [
+        cerrojoAsistente(datos.asistenteId),
         {
           sql: `INSERT INTO escalamientos (asistente_id, pregunta, motivo, trace_id)
             SELECT ?, ?, ?, ? WHERE NOT EXISTS (${existente})

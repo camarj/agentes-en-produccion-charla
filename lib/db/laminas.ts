@@ -1,5 +1,4 @@
-import type { Row } from "@libsql/client";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila, type FuenteDb } from "./client";
 import { numero, texto, textoONulo } from "./tipos";
 
 export interface Lamina {
@@ -50,19 +49,45 @@ export function consultasBusqueda(consulta: string): string[] {
   return consultas.filter((c, i) => consultas.indexOf(c) === i);
 }
 
+// Sin tildes ni diéresis (como `remove_diacritics` de FTS5): «resiliéncia» = «resiliencia».
+const CON_TILDE = "áàäâãéèëêíìïîóòöôõúùüûñç";
+const SIN_TILDE = "aaaaaeeeeiiiiooooouuuunc";
+const sinTilde = (columna: string) => `translate(lower(coalesce(${columna}, '')), '${CON_TILDE}', '${SIN_TILDE}')`;
+
+function quitarTildes(texto: string): string {
+  return texto.normalize("NFD").replace(/\p{M}/gu, "").normalize("NFC");
+}
+
+// Consulta FTS5 de `consultasBusqueda` → tsquery de Postgres:
+// `"x"` → `x`, `"x"*` → `x:*`, espacio → `&` (AND), ` OR ` → `|`.
+export function aTsquery(fts: string): string {
+  const termino = (t: string) => {
+    const m = /^"([^"]*)"(\*?)$/.exec(t.trim());
+    const palabra = quitarTildes(m ? m[1] : t).replace(/[^\p{L}\p{N}]/gu, "");
+    return palabra ? `${palabra}${m?.[2] ? ":*" : ""}` : null;
+  };
+  const unir = (partes: (string | null)[], op: string) => partes.filter((p): p is string => p !== null).join(op);
+  return fts.includes(" OR ") ? unir(fts.split(" OR ").map(termino), " | ") : unir(fts.split(/\s+/).map(termino), " & ");
+}
+
 // Devuelve el texto completo de la lámina y de sus notas (2026-09-25): las
 // láminas son cortas (≤ ~650 caracteres) y un snippet de 32 palabras cortaba
 // sus listas. buscar_laminas igual recorta a MAX_FRAGMENTO y MAX_NOTAS.
+// Provisional hasta T2 (S3): el tsvector se arma al vuelo con el diccionario
+// `simple` (son ~40 láminas) y el título pesa más que el contenido y las notas.
+const DOCUMENTO = `setweight(to_tsvector('simple', ${sinTilde("l.titulo")}), 'A')
+    || setweight(to_tsvector('simple', ${sinTilde("l.contenido")}), 'B')
+    || setweight(to_tsvector('simple', ${sinTilde("l.notas")}), 'B')`;
 const SQL_BUSCAR = `SELECT l.numero AS lamina, l.titulo AS titulo,
     l.contenido AS fragmento,
     CASE WHEN l.notas IS NULL OR trim(l.notas) = '' THEN NULL ELSE l.notas END AS notas,
-    -bm25(laminas_fts, 2.0, 1.0, 1.0) AS puntaje
-  FROM laminas_fts JOIN laminas l ON l.numero = laminas_fts.rowid
-  WHERE laminas_fts MATCH ?
-  ORDER BY bm25(laminas_fts, 2.0, 1.0, 1.0)
+    ts_rank(${DOCUMENTO}, q) AS puntaje
+  FROM laminas l, to_tsquery('simple', ?) AS q
+  WHERE (${DOCUMENTO}) @@ q
+  ORDER BY puntaje DESC, l.numero
   LIMIT ?`;
 
-function aResultado(f: Row): ResultadoBusqueda {
+function aResultado(f: Fila): ResultadoBusqueda {
   return {
     lamina: numero(f, "lamina"),
     titulo: texto(f, "titulo"),
@@ -83,11 +108,8 @@ export function crearLaminas(fuente: FuenteDb = db) {
     });
   }
 
-  // El índice es de contenido externo: se reconstruye tras importar láminas.
-  async function reconstruirIndice(): Promise<void> {
-    const c = await fuente();
-    await c.execute("INSERT INTO laminas_fts(laminas_fts) VALUES('rebuild')");
-  }
+  // Con el tsvector al vuelo no hay índice que reconstruir (T2 decide si lo habrá).
+  async function reconstruirIndice(): Promise<void> {}
 
   async function buscar(consulta: string, limite = 5): Promise<ResultadoBusqueda[]> {
     const consultas = consultasBusqueda(consulta);
@@ -95,7 +117,9 @@ export function crearLaminas(fuente: FuenteDb = db) {
     const tope = Math.min(Math.max(Math.trunc(limite) || 1, 1), 20);
     const c = await fuente();
     for (const fts of consultas) {
-      const r = await c.execute({ sql: SQL_BUSCAR, args: [fts, tope] });
+      const tsquery = aTsquery(fts);
+      if (!tsquery) continue;
+      const r = await c.execute({ sql: SQL_BUSCAR, args: [tsquery, tope] });
       if (r.rows.length > 0) return r.rows.map(aResultado);
     }
     return [];

@@ -62,7 +62,7 @@ describe("importarLaminas", () => {
   it("re-importar actualiza sin duplicar ni perder notas", async () => {
     await importarLaminas(db.fuente, extraerLaminas(html));
     await importarLaminas(db.fuente, extraerLaminas(html));
-    const r = await db.cliente.execute("SELECT count(*) AS n, count(notas) AS conNotas FROM laminas");
+    const r = await db.cliente.execute('SELECT count(*) AS n, count(notas) AS "conNotas" FROM laminas');
     expect(Number(r.rows[0].n)).toBe(3);
     expect(Number(r.rows[0].conNotas)).toBe(2);
     expect(await crearLaminas(db.fuente).buscar("zumbacalabaza")).toHaveLength(1);

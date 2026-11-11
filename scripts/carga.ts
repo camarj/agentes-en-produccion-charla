@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
-import type { Client } from "@libsql/client";
 import { crearAsistentes } from "../lib/db/asistentes";
 import { crearSesiones } from "../lib/db/sesiones";
 import { firmarToken, NOMBRE_COOKIE } from "../lib/session";
+import type { Cliente } from "../lib/db/client";
 import { abrirBaseMigrada, ejecutarCli } from "./comun";
 
 // Prueba de carga (T14): N asistentes de prueba (`carga+<n>@carga.example.com`)
@@ -18,7 +18,7 @@ import { abrirBaseMigrada, ejecutarCli } from "./comun";
 // la carga ya no pasa por /api/identificar: crea al asistente y su sesión en la
 // base y firma la cookie con SESSION_SECRET, igual que el servidor. Por eso la
 // carga entera necesita la base y la clave: corre dentro del
-// contenedor (o en local con la misma DATABASE_PATH que la app).
+// contenedor (o en local con la misma DATABASE_URL que la app).
 // Nunca imprime emails ni nombres.
 
 export const PREFIJO_EMAIL = "carga+";
@@ -102,7 +102,7 @@ async function enviarPregunta(url: string, cookie: string, pregunta: string, n: 
 
 // Crea (o reutiliza) al asistente de prueba n y le abre una sesión nueva.
 // Devuelve la cabecera Cookie lista para enviar.
-export async function cookieDePrueba(cliente: Client, n: number): Promise<string> {
+export async function cookieDePrueba(cliente: Cliente, n: number): Promise<string> {
   const fuente = async () => cliente;
   const repo = crearAsistentes(fuente);
   const email = emailPrueba(n);
@@ -111,7 +111,7 @@ export async function cookieDePrueba(cliente: Client, n: number): Promise<string
   return `${NOMBRE_COOKIE}=${firmarToken(sesion.token)}`;
 }
 
-async function asistente(url: string, cliente: Client, n: number, preguntas: number): Promise<Turno[]> {
+async function asistente(url: string, cliente: Cliente, n: number, preguntas: number): Promise<Turno[]> {
   let cookie: string;
   try {
     cookie = await cookieDePrueba(cliente, n);
@@ -142,7 +142,7 @@ export async function borrarAsistentesPrueba(): Promise<number> {
     });
     return r.rowsAffected;
   } finally {
-    cliente.close();
+    await cliente.close();
   }
 }
 
@@ -177,7 +177,7 @@ async function principal() {
   try {
     resultados = (await Promise.all(Array.from({ length: n }, (_, i) => asistente(url, cliente, i + 1, p)))).flat();
   } finally {
-    cliente.close();
+    await cliente.close();
   }
   const duracion = performance.now() - inicio;
 

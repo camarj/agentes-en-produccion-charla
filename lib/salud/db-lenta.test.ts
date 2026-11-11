@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import type { Cliente } from "../db/client";
 import { describe, expect, it, vi } from "vitest";
 import { crearBaseLenta } from "./db-lenta";
 
@@ -6,9 +6,10 @@ function clienteFalso() {
   return {
     execute: vi.fn(async () => ({ rows: [{ n: 1 }] })),
     batch: vi.fn(async () => []),
-    close: vi.fn(),
-    closed: false,
-  } as unknown as Client & { execute: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> };
+    transaccion: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
+    abierto: true,
+  } as unknown as Cliente & { execute: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; abierto: boolean };
 }
 
 describe("base de datos lenta (interruptor y semáforo «Base de datos»)", () => {
@@ -37,11 +38,11 @@ describe("base de datos lenta (interruptor y semáforo «Base de datos»)", () =
     expect(alLenta).toHaveBeenCalledTimes(2);
   });
 
-  it("el resto del cliente sigue igual (close, closed)", () => {
+  it("el resto del cliente sigue igual (close y otras propiedades)", async () => {
     const c = clienteFalso();
     const envuelto = crearBaseLenta({ alLenta: vi.fn() }).envolver(c);
-    envuelto.close();
+    await envuelto.close();
     expect(c.close).toHaveBeenCalled();
-    expect(envuelto.closed).toBe(false);
+    expect((envuelto as typeof c).abierto).toBe(true);
   });
 });
