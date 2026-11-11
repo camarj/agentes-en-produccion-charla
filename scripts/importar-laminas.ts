@@ -82,8 +82,8 @@ export function extraerLaminas(html: string): Lamina[] {
 
 export async function importarLaminas(fuente: FuenteDb, laminas: Lamina[]): Promise<void> {
   const repo = crearLaminas(fuente);
+  // La columna tsvector `documento` es generada: se indexa sola en cada upsert.
   for (const lamina of laminas) await repo.upsert(lamina);
-  await repo.reconstruirIndice();
 }
 
 async function principal() {

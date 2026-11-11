@@ -14,7 +14,6 @@ describe("laminas", () => {
     await repo.upsert({ numero: 1, titulo: "Portada", contenido: "Cómo lograr que tus agentes sobrevivan a producción", notas: null });
     await repo.upsert({ numero: 7, titulo: "Resiliencia", contenido: "Reintentos, modelo de respaldo y degradación elegante", notas: "Contar la caída del proveedor" });
     await repo.upsert({ numero: 9, titulo: "Guardrails", contenido: "Filtros de entrada y salida para el agente", notas: null });
-    await repo.reconstruirIndice();
   });
   afterEach(() => db.cerrar());
 
@@ -50,9 +49,50 @@ describe("laminas", () => {
 
   it("upsert actualiza una lámina existente", async () => {
     await repo.upsert({ numero: 9, titulo: "Guardrails v2", contenido: "Filtros", notas: "nuevo" });
-    await repo.reconstruirIndice();
     const r = await repo.buscar("guardrails");
     expect(r[0]).toMatchObject({ lamina: 9, titulo: "Guardrails v2" });
+  });
+});
+
+// Búsqueda de texto completo de Postgres (T2, S3): diccionario español, sin
+// tildes, título por encima del contenido, columna tsvector generada con GIN.
+describe("laminas · texto completo en Postgres", () => {
+  let db: Awaited<ReturnType<typeof crearDbTemporal>>;
+  let repo: ReturnType<typeof crearLaminas>;
+  beforeEach(async () => {
+    db = await crearDbTemporal();
+    repo = crearLaminas(db.fuente);
+    await repo.upsert({ numero: 2, titulo: "Observabilidad", contenido: "Trazas de cada agente en producción", notas: null });
+    await repo.upsert({ numero: 3, titulo: "Evaluaciones", contenido: "Puntajes de los jueces", notas: "Hablar de observabilidad al cierre" });
+    await repo.upsert({ numero: 4, titulo: "Agente", contenido: "Instrucciones y herramientas", notas: null });
+  });
+  afterEach(() => db.cerrar());
+  const numeros = async (q: string) => (await repo.buscar(q)).map((r) => r.lamina);
+
+  it("ignora tildes: «produccion» encuentra «producción»", async () => {
+    expect(await numeros("produccion")).toEqual([2]);
+    expect(await numeros("PRODUCCIÓN")).toEqual([2]);
+  });
+
+  it("reduce a la raíz en español: «agentes» ↔ «agente» y «trazas» ↔ «traza»", async () => {
+    expect((await numeros("agentes")).sort()).toEqual([2, 4]);
+    expect(await numeros("traza")).toEqual([2]);
+  });
+
+  it("el título pesa más que el cuerpo", async () => {
+    expect(await numeros("observabilidad")).toEqual([2, 3]);
+    expect((await numeros("agente"))[0]).toBe(4);
+  });
+
+  it("guarda el tsvector en una columna generada con índice GIN", async () => {
+    const col = await db.cliente.execute(
+      "SELECT is_generated FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'laminas' AND column_name = 'documento'",
+    );
+    expect(col.rows[0]?.is_generated).toBe("ALWAYS");
+    const idx = await db.cliente.execute(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'laminas' AND indexdef ILIKE '%USING gin%'",
+    );
+    expect(idx.rows).toHaveLength(1);
   });
 });
 

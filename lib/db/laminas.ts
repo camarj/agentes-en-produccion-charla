@@ -37,7 +37,7 @@ function conPrefijo(palabra: string): string {
 // 2. AND con prefijos de las palabras de contenido (sin palabras vacías);
 // 3. OR exacto de todas las palabras (lo de siempre). Un OR con prefijos
 //    empeoraba el orden en las consultas reales del agente (evals 2026-09-25).
-// Solo cambia la consulta: el índice (unicode61, sin tildes) es el mismo.
+// Solo cambia la consulta: el índice (columna `documento`) es el mismo.
 export function consultasBusqueda(consulta: string): string[] {
   const palabras = (consulta.match(/[\p{L}\p{N}]+/gu) ?? []).map((t) => t.toLowerCase());
   if (palabras.length === 0) return [];
@@ -50,15 +50,13 @@ export function consultasBusqueda(consulta: string): string[] {
 }
 
 // Sin tildes ni diéresis (como `remove_diacritics` de FTS5): «resiliéncia» = «resiliencia».
-const CON_TILDE = "áàäâãéèëêíìïîóòöôõúùüûñç";
-const SIN_TILDE = "aaaaaeeeeiiiiooooouuuunc";
-const sinTilde = (columna: string) => `translate(lower(coalesce(${columna}, '')), '${CON_TILDE}', '${SIN_TILDE}')`;
-
+// La columna `documento` (migración 002) normaliza el texto de las láminas con
+// el mismo translate() de áàäâãéèëêíìïîóòöôõúùüûñç; aquí se normaliza la consulta.
 function quitarTildes(texto: string): string {
   return texto.normalize("NFD").replace(/\p{M}/gu, "").normalize("NFC");
 }
 
-// Consulta FTS5 de `consultasBusqueda` → tsquery de Postgres:
+// Consulta de `consultasBusqueda` (sintaxis FTS5) → tsquery de Postgres:
 // `"x"` → `x`, `"x"*` → `x:*`, espacio → `&` (AND), ` OR ` → `|`.
 export function aTsquery(fts: string): string {
   const termino = (t: string) => {
@@ -73,17 +71,14 @@ export function aTsquery(fts: string): string {
 // Devuelve el texto completo de la lámina y de sus notas (2026-09-25): las
 // láminas son cortas (≤ ~650 caracteres) y un snippet de 32 palabras cortaba
 // sus listas. buscar_laminas igual recorta a MAX_FRAGMENTO y MAX_NOTAS.
-// Provisional hasta T2 (S3): el tsvector se arma al vuelo con el diccionario
-// `simple` (son ~40 láminas) y el título pesa más que el contenido y las notas.
-const DOCUMENTO = `setweight(to_tsvector('simple', ${sinTilde("l.titulo")}), 'A')
-    || setweight(to_tsvector('simple', ${sinTilde("l.contenido")}), 'B')
-    || setweight(to_tsvector('simple', ${sinTilde("l.notas")}), 'B')`;
+// `documento` es un tsvector generado y con índice GIN (migración 002): español
+// (raíces), sin tildes, título con peso A y contenido y notas con peso B.
 const SQL_BUSCAR = `SELECT l.numero AS lamina, l.titulo AS titulo,
     l.contenido AS fragmento,
     CASE WHEN l.notas IS NULL OR trim(l.notas) = '' THEN NULL ELSE l.notas END AS notas,
-    ts_rank(${DOCUMENTO}, q) AS puntaje
-  FROM laminas l, to_tsquery('simple', ?) AS q
-  WHERE (${DOCUMENTO}) @@ q
+    ts_rank(l.documento, q) AS puntaje
+  FROM laminas l, to_tsquery('spanish', ?) AS q
+  WHERE l.documento @@ q
   ORDER BY puntaje DESC, l.numero
   LIMIT ?`;
 
@@ -108,9 +103,6 @@ export function crearLaminas(fuente: FuenteDb = db) {
     });
   }
 
-  // Con el tsvector al vuelo no hay índice que reconstruir (T2 decide si lo habrá).
-  async function reconstruirIndice(): Promise<void> {}
-
   async function buscar(consulta: string, limite = 5): Promise<ResultadoBusqueda[]> {
     const consultas = consultasBusqueda(consulta);
     if (consultas.length === 0) return [];
@@ -125,7 +117,7 @@ export function crearLaminas(fuente: FuenteDb = db) {
     return [];
   }
 
-  return { upsert, reconstruirIndice, buscar };
+  return { upsert, buscar };
 }
 
 export const laminas = crearLaminas();

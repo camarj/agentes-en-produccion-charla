@@ -23,7 +23,7 @@ describe("migraciones", () => {
       expect(nombres).toContain(t);
     }
     const aplicadas = await db.cliente.execute("SELECT nombre FROM _migraciones");
-    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_base_postgres.sql"]);
+    expect(aplicadas.rows.map((r) => r.nombre)).toEqual(["001_base_postgres.sql", "002_busqueda_laminas.sql"]);
   });
 
   it("siembra los interruptores apagados, la lámina 1 y el presupuesto en cero", async () => {
@@ -71,7 +71,7 @@ describe("migraciones", () => {
     const vacio = await crearDbTemporal({ migrada: false });
     cerrar = vacio.cerrar;
     const [a, b] = await Promise.all([migrar(vacio.cliente), migrar(vacio.cliente)]);
-    expect([a, b].map((x) => x.length).sort()).toEqual([0, 1]);
+    expect([a, b].map((x) => x.length).sort()).toEqual([0, 2]);
   });
 
   it("si una migración falla no queda ninguna aplicada a medias", async () => {
