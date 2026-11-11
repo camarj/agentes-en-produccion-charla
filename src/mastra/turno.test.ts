@@ -1,13 +1,9 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
 import type { ChunkType } from "@mastra/core/stream";
 import { createTool } from "@mastra/core/tools";
-import { LibSQLStore } from "@mastra/libsql";
+import { crearAlmacenamientoDePrueba } from "./pruebas/almacenamiento";
 import { Memory } from "@mastra/memory";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -112,8 +108,11 @@ function contexto(asistenteId = "asistente-1") {
   return rc;
 }
 
-function memoriaTemporal() {
-  return new Memory({ storage: new LibSQLStore({ id: `mem-${crypto.randomUUID()}`, url: "file::memory:" }) });
+// Lista antes del turno: estas pruebas miden tiempos y crear las tablas tarda.
+async function memoriaTemporal() {
+  const { almacenamiento } = crearAlmacenamientoDePrueba("turno");
+  await almacenamiento.init();
+  return new Memory({ storage: almacenamiento });
 }
 
 async function leerConTiempos(stream: ReadableStream<ChunkType>) {
@@ -186,7 +185,7 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
   });
 
   it("bloqueado: solo el mensaje fijo, el agente se detiene, no escala y no queda nada en la memoria", async () => {
-    const memoria = memoriaTemporal();
+    const memoria = await memoriaTemporal();
     const { agente, principal, repo } = agentePrueba({ herramienta: "escalar_pregunta", memoria });
     const { verificar } = verificadorFalso(BLOQUEO_INYECCION, 80);
     const turno = await ejecutarTurno({
@@ -216,7 +215,7 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
   });
 
   it("bloqueado cuando el agente ya terminó: igual no se guarda nada en la memoria", async () => {
-    const memoria = memoriaTemporal();
+    const memoria = await memoriaTemporal();
     const { agente, tiempos } = agentePrueba({ memoria });
     const { verificar, marca } = verificadorFalso(
       { ...BLOQUEO_INYECCION, motivo: "fuera_de_alcance", mensaje: MENSAJES_BLOQUEO.fuera_de_alcance, guardrail: "alcance_charla", processorId: "alcance-charla", metadata: { guardrail: "alcance_charla", motivo: "fuera_de_alcance" } },
@@ -238,7 +237,7 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
   });
 
   it("permitido: el turno sí queda en la memoria y escalar_pregunta escribe", async () => {
-    const memoria = memoriaTemporal();
+    const memoria = await memoriaTemporal();
     const { agente, repo } = agentePrueba({ herramienta: "escalar_pregunta", memoria, texto: ["Quedó registrada."] });
     const { verificar } = verificadorFalso(PERMITIDO, 50);
     const turno = await ejecutarTurno({
@@ -377,8 +376,7 @@ describe("streamUI (contrato con AI SDK UI para T09/T11)", () => {
 
 describe("traza del turno (observabilidad real, modelo falso)", () => {
   it("el veredicto queda en agent_run (permitido y bloqueado) y ningún span guarda el email del usuario", async () => {
-    const ruta = path.join(os.tmpdir(), `turno-obs-${crypto.randomUUID()}.db`);
-    const store = new LibSQLStore({ id: "turno-obs", url: `file:${ruta}` });
+    const store = crearAlmacenamientoDePrueba("turno_obs").almacenamiento;
     const { agente } = agentePrueba({});
     const mastra = new Mastra({ storage: store, agents: { charla: agente }, observability: crearObservabilidad() });
     try {
@@ -416,7 +414,6 @@ describe("traza del turno (observabilidad real, modelo falso)", () => {
       }
     } finally {
       await mastra.observability.shutdown?.();
-      for (const s of ["", "-wal", "-shm"]) fs.rmSync(ruta + s, { force: true });
     }
   }, 20_000);
 });

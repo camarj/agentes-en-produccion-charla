@@ -1,9 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
-import { afterAll, describe, expect, it } from "vitest";
+import { crearAlmacenamientoDePrueba } from "@/src/mastra/pruebas/almacenamiento";
+import { describe, expect, it } from "vitest";
 import type { ResultadoScorer } from "./checks";
 import { cargarDataset, sincronizarDataset, type DatasetsMastra } from "./dataset";
 import { cerrarExperimento, crearExperimento, nombreExperimento, salidaParaStudio, scoresParaStudio, subirCaso } from "./experimento";
@@ -76,12 +73,9 @@ describe("salidaParaStudio", () => {
   });
 });
 
-describe("experimento en Mastra + LibSQL (lo que lee Studio)", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evals-exp-"));
-  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-
+describe("experimento en Mastra + Postgres (lo que lee Studio)", () => {
   it("crea el experimento, sube un caso con sus scores y razones, y lo cierra con el veredicto", async () => {
-    const mastra = new Mastra({ storage: new LibSQLStore({ id: "prueba", url: `file:${path.join(dir, "mastra.db")}` }) });
+    const mastra = new Mastra({ storage: crearAlmacenamientoDePrueba("evals_exp").almacenamiento });
     const sinc = await sincronizarDataset(mastra.datasets as unknown as DatasetsMastra, datos);
     const dataset = await mastra.datasets.get({ id: sinc.dataset.id });
     const { experimentId } = await crearExperimento(dataset, {

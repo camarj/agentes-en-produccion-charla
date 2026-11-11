@@ -79,13 +79,14 @@ export async function borrarEsquemaTemporal(dir: string, url: string): Promise<v
 // Variables que el proceso del runner (y la app que levanta para R04) deben
 // tener ANTES de abrir cualquier conexión:
 // - DATABASE_URL: la base Postgres con `search_path` en el esquema temporal, siempre.
-// - MASTRA_DB_URL: solo si se pide con EVALS_MASTRA_DB_PATH (pruebas locales).
-//   Si no, se usa el mastra.db de siempre, el que lee Studio (en producción,
-//   el volumen compartido /app/data).
+// - MASTRA_ESQUEMA: solo si se pide con EVALS_MASTRA_ESQUEMA (pruebas locales).
+//   Si no, Mastra usa su esquema de siempre (`mastra`) en la misma base, el que
+//   lee Studio: el experimento queda visible ahí. Las tablas de Mastra llevan
+//   el esquema explícito, así que el `search_path` temporal no las mueve.
 export function variablesDeEntorno({ dir }: { dir: string }, entorno: NodeJS.ProcessEnv | Record<string, string | undefined>): Record<string, string> {
   const variables: Record<string, string> = { DATABASE_URL: urlConEsquema(urlBase(entorno), nombreEsquema(dir)) };
-  const mastra = entorno.EVALS_MASTRA_DB_PATH?.trim();
-  if (mastra) variables.MASTRA_DB_URL = `file:${path.resolve(mastra)}`;
+  const mastra = entorno.EVALS_MASTRA_ESQUEMA?.trim();
+  if (mastra) variables.MASTRA_ESQUEMA = mastra;
   return variables;
 }
 

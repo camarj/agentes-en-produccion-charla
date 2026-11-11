@@ -1,6 +1,6 @@
 import { toAISdkStream } from "@mastra/ai-sdk";
 import { Agent } from "@mastra/core/agent";
-import { LibSQLStore } from "@mastra/libsql";
+import { crearAlmacenamientoDePrueba } from "../pruebas/almacenamiento";
 import { Memory } from "@mastra/memory";
 import { describe, expect, it } from "vitest";
 import { AlcanceCharla } from "./alcance-charla";
@@ -56,7 +56,7 @@ describe("contrato del stream UI (toAISdkStream)", () => {
   });
 
   it("un turno bloqueado en la entrada no queda en la memoria (ni la pregunta ni la respuesta)", async () => {
-    const memoria = new Memory({ storage: new LibSQLStore({ id: "contrato-memoria", url: "file::memory:" }) });
+    const memoria = new Memory({ storage: crearAlmacenamientoDePrueba("contrato").almacenamiento });
     let bloquear = true;
     const agente = new Agent({
       id: "contrato-memoria",

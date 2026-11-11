@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
-import { afterAll, describe, expect, it } from "vitest";
+import { crearAlmacenamientoDePrueba } from "@/src/mastra/pruebas/almacenamiento";
+import { describe, expect, it } from "vitest";
 import {
   GATES,
   ID_DATASET_STUDIO,
@@ -217,12 +217,9 @@ describe("sincronizarDataset (datasets falsos)", () => {
   });
 });
 
-describe("sincronizarDataset (Mastra + LibSQL reales)", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evals-dataset-"));
-  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-
+describe("sincronizarDataset (Mastra + Postgres reales)", () => {
   it("no duplica el dataset ni sube su versión si el JSON no cambió", async () => {
-    const mastra = new Mastra({ storage: new LibSQLStore({ id: "prueba", url: `file:${path.join(dir, "mastra.db")}` }) });
+    const mastra = new Mastra({ storage: crearAlmacenamientoDePrueba("evals_dataset").almacenamiento });
     const r1 = await sincronizarDataset(mastra.datasets as unknown as DatasetsMastra, datos);
     expect(r1.agregados).toHaveLength(40);
     const version1 = (await r1.dataset.getDetails()) as { version?: number };

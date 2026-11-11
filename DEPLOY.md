@@ -3,7 +3,7 @@
 Handoff para el agente que despliega. Todo lo que hay que hacer está aquí; si algo no está, pregunta a Raúl antes de improvisar.
 
 - **Repo:** https://github.com/camarj/agentes-en-produccion-charla (rama `main`, público)
-- **Servidor:** Dokploy de Inteliside, **EE. UU.** (misma región aproximada que Neon, `us-east-2`)
+- **Servidor:** Dokploy de Inteliside, **EE. UU.** (pasa a Cloud Run en T4). Todos los datos, de la app y de Mastra, están en **una sola base Cloud SQL para PostgreSQL** (`DATABASE_URL`); Neon y `mastra.db` ya no se usan.
 - **Qué se despliega:** una sola imagen (`Dockerfile` en la raíz) usada por **dos servicios**: `web` (la app de los asistentes + panel del speaker) y `studio` (Mastra Studio + API de Mastra).
 - **Cuándo:** la charla es el sábado 2026-09-26. Tras desplegar se corren los evals en producción y sus resultados **se quedan** para la demo.
 - **Dominios en uso:** app `charla.codetrain.cloud`, Studio `studio-charla.codetrain.cloud`.
@@ -58,7 +58,6 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 | `GOOGLE_VERTEX_API_KEY` | no | ambos | alternativa a proyecto + cuenta de servicio: clave de Vertex en **modo express**. Si existe, se usa en lugar de las credenciales | de Raúl |
 | `OPENAI_API_KEY` | sí | ambos | modelo de respaldo (`openai/gpt-6-luna`), guardrails, jueces, dictado por voz | de Raúl |
 | `ANTHROPIC_API_KEY` | sí | ambos | respaldo de guardrails y jueces (`anthropic/claude-haiku-4-5`) | de Raúl |
-| `OBSERVABILIDAD_DATABASE_URL` | sí | ambos | trazas y feedback en Neon. **Conexión directa** (sin `-pooler`), `sslmode=require` | de Raúl |
 | `SESSION_SECRET` | sí | ambos (`studio` lo usa en el eval R04) | firma de la cookie de sesión, ≥ 16 caracteres | de Raúl (o uno nuevo de 32+ caracteres: invalida sesiones previas, no importa hoy) |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | sí | `web` (**argumento de build** y variable de entorno) | entrar con Google: el navegador muestra el botón con este ID y el servidor verifica que la credencial se emitió para él. Sin él nadie puede entrar. No es secreto | ID de cliente OAuth «Aplicación web» de Google Cloud, con el dominio público en «Orígenes de JavaScript autorizados» |
 | `PANEL_PASSWORD` | sí | `web` | Basic Auth de `/panel`. Sin ella el panel queda cerrado | de Raúl |
@@ -66,10 +65,10 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 | `PRESUPUESTO_MAX_USD` | sí | `web` | tope de gasto; al alcanzarlo el chat se pausa solo. Vacía = sin tope | `120` (DevFest, ~1000 personas; G6) |
 | `MAX_MENSAJES_ASISTENTE` | no | `web` | tope de preguntas por asistente. Vacía = 15 | `15` (charlas de 60 min; G6) |
 | `DATABASE_URL` | sí | ambos | base de la app (asistentes, sesiones, cola, votos, interruptores, presupuesto, turnos, Jev) en **PostgreSQL** (Cloud SQL). Reemplaza a `DATABASE_PATH` y `charla.db`. Las migraciones se aplican al arrancar con un cerrojo consultivo (varios contenedores a la vez no chocan). En Cloud Run: `postgres://USUARIO:CLAVE@/charla?host=/cloudsql/PROYECTO:REGION:INSTANCIA` (detalle en T4) | URL `postgres://` de Raúl |
-| `MASTRA_DB_URL` | no | — | **no ponerla**; el valor por defecto apunta a `/app/data/mastra.db` (Mastra pasa a Postgres en T3) | — |
+| `MASTRA_ESQUEMA` | no | — | **no ponerla**: Mastra (memoria, hilos, puntajes, workflows, datasets, experimentos y trazas) usa la misma `DATABASE_URL`, en el esquema `mastra`. El usuario de la base necesita permiso para crear ese esquema y sus tablas (Mastra las crea al arrancar). Conexiones: hasta 10 (app) + 4 (Mastra) por proceso; `web` y `studio` suman 28 como máximo | — |
 | `APAGADO_ESPERA_MS` | no | `web` | espera al apagar (por defecto 8000) | — |
 | `PORT`, `HOSTNAME`, `MASTRA_HOST`, `MASTRA_STUDIO_PATH`, `PROYECTO_RAIZ`, `NODE_ENV` | — | — | las fija la imagen; **no tocar** | — |
-| `EVALS_MASTRA_DB_PATH`, `EVALS_LAMINAS_HTML` | — | — | **no poner**: solo pruebas locales | — |
+| `EVALS_MASTRA_ESQUEMA`, `EVALS_LAMINAS_HTML` | — | — | **no poner**: solo pruebas locales | — |
 
 `PUBLIC_URL` existe en el `.env` local pero el código no la usa.
 
@@ -87,7 +86,7 @@ Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en
 ## 5. Primer despliegue, paso a paso
 
 1. Crea los dos servicios (§2) con sus variables (§3) y dominios (§4). Despliega `web` y luego `studio`.
-2. **Espera ~2 minutos** tras el primer arranque: Mastra prepara sus tablas en Neon en segundo plano. Los votos 👍/👎 que lleguen antes se guardan en la base de la app (`DATABASE_URL`) pero no llegan a Studio.
+2. **Espera un momento** tras el primer arranque: Mastra prepara sus tablas de trazas (esquema `mastra`) en segundo plano. Los votos 👍/👎 que lleguen antes se guardan en la tabla `feedback` de la app pero no llegan a Studio.
 3. Comprueba:
    - `https://<dominio-app>/` → 200 (pantalla negra con el logo de Inteliside).
    - `https://<dominio-app>/api/sesion` → `{"autenticado":false,...}`.
@@ -131,9 +130,9 @@ pnpm evals -- --instrucciones 1.1.0          # versión anterior, mismo dataset 
 
 ### 6.1 Importar los experimentos de la iteración 2026-09-25
 
-Los cinco experimentos de la iteración se crearon con `pnpm evals` en local, así que viven en el `data/mastra.db` de Raúl, no en el del servidor. El repo trae un paquete con ellos (`evals/experimentos/iteracion-2026-09-25.json`, sin datos personales: solo casos y perfiles inventados de los evals). Se importan como un dataset **nuevo**, «charla-v1 · iteración 2026-09-25» (id `charla-v1-iteracion-2026-09-25`), así que el `charla-v1` del servidor y sus experimentos no se tocan ni se mezclan.
+Los cinco experimentos de la iteración se crearon con `pnpm evals` en local (cuando Mastra aún usaba `data/mastra.db`), no en la base del servidor. El repo trae un paquete con ellos (`evals/experimentos/iteracion-2026-09-25.json`, sin datos personales: solo casos y perfiles inventados de los evals). Se importan como un dataset **nuevo**, «charla-v1 · iteración 2026-09-25» (id `charla-v1-iteracion-2026-09-25`), así que el `charla-v1` del servidor y sus experimentos no se tocan ni se mezclan.
 
-En la Terminal del contenedor **`studio`** o **`web`** (comparten el volumen `/app/data`):
+Desde cualquier lugar con `DATABASE_URL` de la base de producción (contenedor `studio` o `web`, o local con el proxy de Cloud SQL). **Antes de `--si`, un backup:** `gcloud sql backups create --instance=<instancia>`.
 
 ```bash
 pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json        # simulación: no escribe nada
@@ -141,12 +140,12 @@ pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json --si   #
 ```
 
 - **Simulación esperada:** «El dataset no existe en el destino: se crea.» y, por tabla, nuevas = paquete y **conflictos 0**: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200.
-- **Con `--si`:** primero copia la base a `/app/data/mastra.respaldo-<fecha>.db` y luego inserta todo en una sola escritura. Al final muestra «En el destino ahora: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200, datasetsTotales 2» (o más, si hay otros datasets).
-- Es **idempotente**: repetirlo no duplica nada («No faltaba nada: no se escribió nada»).
+- **Con `--si`:** inserta todo en una sola transacción (o entra todo o nada). Al final muestra «En el destino ahora: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200, datasetsTotales 2» (o más, si hay otros datasets).
+- Es **idempotente**: repetirlo no duplica nada (todas las «Filas insertadas» en 0).
 - Si la simulación muestra **conflictos mayores que 0**, no apliques (el script igual se niega) y avisa a Raúl: significa que esos ids ya existen en otro dataset del servidor.
 - **Verificar en Studio:** Datasets → «charla-v1 · iteración 2026-09-25» → **Experiments**: 5 corridas (de «charla-v1.4.0 · instrucciones 1.1.0 · 2026-09-25 13:02» a «charla-v1.5.0 · instrucciones 1.2.1 · 2026-09-25 14:32»). Marca dos (por ejemplo, la primera y la última) y usa **Compare**: 40 casos con sus puntajes. Studio lee la base en cada consulta: basta con recargar la página. Reinicia el servicio `studio` solo si aun así no aparecen.
-- Las trazas de esos experimentos están en Neon solo si la corrida local tenía `OBSERVABILIDAD_DATABASE_URL`; si un caso no abre su traza, es por eso y no afecta a los puntajes.
-- **Deshacer** (solo si Raúl lo pide): detén `studio` y `web`, reemplaza `/app/data/mastra.db` por el respaldo y borra `/app/data/mastra.db-wal` y `-shm`, y vuelve a arrancar.
+- Las trazas de esos experimentos no viajan en el paquete (estaban en Neon): si un caso no abre su traza, es por eso y no afecta a los puntajes.
+- **Deshacer** (solo si Raúl lo pide): restaura el backup de Cloud SQL hecho antes de `--si`.
 
 ---
 

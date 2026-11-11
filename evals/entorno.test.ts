@@ -31,12 +31,12 @@ describe("perfilesDelDataset", () => {
 
 describe("variablesDeEntorno", () => {
   const BASE = "postgres://u:p@db:5432/charla";
-  it("siempre apunta la base de la app a un esquema temporal propio; mastra.db solo si se pide", () => {
+  it("siempre apunta la base de la app a un esquema temporal propio; el esquema de Mastra solo si se pide", () => {
     const esquema = encodeURIComponent("-c search_path=evals_charla_evals_x");
     expect(variablesDeEntorno({ dir: "/tmp/charla-evals-x" }, { DATABASE_URL: BASE })).toEqual({ DATABASE_URL: `${BASE}?options=${esquema}` });
-    expect(variablesDeEntorno({ dir: "/tmp/charla-evals-x" }, { DATABASE_URL: BASE, EVALS_MASTRA_DB_PATH: "/tmp/m/mastra.db" })).toEqual({
+    expect(variablesDeEntorno({ dir: "/tmp/charla-evals-x" }, { DATABASE_URL: BASE, EVALS_MASTRA_ESQUEMA: "mastra_local" })).toEqual({
       DATABASE_URL: `${BASE}?options=${esquema}`,
-      MASTRA_DB_URL: "file:/tmp/m/mastra.db",
+      MASTRA_ESQUEMA: "mastra_local",
     });
   });
   it("con el socket de Cloud SQL agrega el esquema a los parámetros que ya trae", () => {

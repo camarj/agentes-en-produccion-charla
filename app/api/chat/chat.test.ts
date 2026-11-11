@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Agent } from "@mastra/core/agent";
 import type { RequestContext } from "@mastra/core/request-context";
-import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +17,7 @@ import { NOMBRE_COOKIE, firmarToken } from "@/lib/session";
 import { MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
 import { modeloFalso } from "@/src/mastra/processors/pruebas-modelo";
 import type { Veredicto, VerificarEntrada } from "@/src/mastra/processors/verificacion-entrada";
+import { crearAlmacenamientoDePrueba } from "@/src/mastra/pruebas/almacenamiento";
 import { ejecutarTurno } from "@/src/mastra/turno";
 import { GET as historial } from "./historial/route";
 import { POST as nuevo } from "./nuevo/route";
@@ -68,7 +65,6 @@ vi.mock("@/src/mastra/turno", async (original) => {
 });
 
 let db: Awaited<ReturnType<typeof crearDbTemporal>>;
-let rutaMemoria: string;
 let memoria: Memory;
 let falso: ReturnType<typeof modeloFalso>;
 
@@ -183,8 +179,9 @@ beforeEach(async () => {
   vi.stubEnv("PRESUPUESTO_MAX_USD", "100");
   db = await crearDbTemporal();
   estado.fuente = db.fuente;
-  rutaMemoria = path.join(os.tmpdir(), `mastra-chat-${crypto.randomUUID()}.db`);
-  memoria = new Memory({ storage: new LibSQLStore({ id: `mem-${crypto.randomUUID()}`, url: `file:${rutaMemoria}` }) });
+  const { almacenamiento } = crearAlmacenamientoDePrueba("chat");
+  await almacenamiento.init();
+  memoria = new Memory({ storage: almacenamiento });
   estado.verificar = vi.fn<VerificarEntrada>(async () => PERMITIDO);
   estado.traceId = "traza-prueba-1";
   estado.fallarTurno = false;
@@ -196,7 +193,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   db.cerrar();
-  for (const s of ["", "-wal", "-shm"]) fs.rmSync(rutaMemoria + s, { force: true });
 });
 
 describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {

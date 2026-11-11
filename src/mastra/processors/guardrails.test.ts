@@ -1,10 +1,6 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
+import { crearAlmacenamientoDePrueba } from "../pruebas/almacenamiento";
 import { Memory } from "@mastra/memory";
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
@@ -138,7 +134,7 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   });
 
   it("bloqueado: escalar_pregunta no escribe y el turno no queda en la memoria", async () => {
-    const memoria = new Memory({ storage: new LibSQLStore({ id: "guardia-memoria", url: "file::memory:" }) });
+    const memoria = new Memory({ storage: crearAlmacenamientoDePrueba("guardia").almacenamiento });
     const repo = { crearConLimite: vi.fn(async () => ({ estado: "creado", id: 1 })), posicion: vi.fn(async () => 1) };
     const a = agenteCharlaFalso({
       detectorModelo: detectorFalso(() => INYECCION, 60),
@@ -208,22 +204,17 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
 
 describe("GuardiaEntrada: sin snapshots persistidos (regla 6)", () => {
   it("no quedan snapshots de workflows con el perfil ni el texto del usuario", async () => {
-    const ruta = path.join(os.tmpdir(), `guardrails-snap-${crypto.randomUUID()}.db`);
-    try {
-      const store = new LibSQLStore({ id: "snap-test", url: `file:${ruta}` });
-      const agente = agenteCharlaFalso({
-        detectorModelo: detectorFalso(() => LIMPIO),
-        clasificar: clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })),
-        principal: modeloFalso("openai/gpt-6-luna", () => ({ texto: "El harness..." })),
-      });
-      const mastra = new Mastra({ storage: store, agents: { charla: agente } });
-      const r = await mastra.getAgent("charla").generate("Soy Zoraida, mi correo es z@correo.ec. ¿Qué es el harness?");
-      expect(r.text).toBe("El harness...");
-      const flujos = await store.getStore("workflows");
-      const runs = await flujos!.listWorkflowRuns({});
-      expect(JSON.stringify(runs)).not.toContain("z@correo.ec");
-    } finally {
-      for (const sufijo of ["", "-wal", "-shm"]) fs.rmSync(ruta + sufijo, { force: true });
-    }
+    const store = crearAlmacenamientoDePrueba("snap").almacenamiento;
+    const agente = agenteCharlaFalso({
+      detectorModelo: detectorFalso(() => LIMPIO),
+      clasificar: clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })),
+      principal: modeloFalso("openai/gpt-6-luna", () => ({ texto: "El harness..." })),
+    });
+    const mastra = new Mastra({ storage: store, agents: { charla: agente } });
+    const r = await mastra.getAgent("charla").generate("Soy Zoraida, mi correo es z@correo.ec. ¿Qué es el harness?");
+    expect(r.text).toBe("El harness...");
+    const flujos = await store.getStore("workflows");
+    const runs = await flujos!.listWorkflowRuns({});
+    expect(JSON.stringify(runs)).not.toContain("z@correo.ec");
   });
 });

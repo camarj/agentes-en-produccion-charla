@@ -1,9 +1,7 @@
-// mastra.db sigue en SQLite hasta T3 (S4): solo esa parte usa @libsql/client.
-import { createClient, type Client } from "@libsql/client";
+import type { Pool } from "pg";
 import { urlPorDefecto, type Cliente, type FuenteDb } from "../lib/db/client";
 import { esTrazaDeEval } from "../lib/origen-eval";
-import { urlArchivo } from "../lib/rutas";
-import { crearAlmacenamiento } from "../src/mastra/storage";
+import { crearAlmacenamiento, crearPoolMastra, esquemaMastra } from "../src/mastra/storage";
 import { abrirBaseMigrada, ejecutarCli } from "./comun";
 
 // Reinicio para el día de la charla: deja en cero lo que muestran el panel del
@@ -111,7 +109,7 @@ export async function reiniciarCharlaDb(fuente: FuenteDb, { aplicar }: { aplicar
   return antes;
 }
 
-// ─── mastra.db (memoria del agente y puntajes en vivo) ───────────────────────
+// ─── Mastra (memoria del agente y puntajes en vivo, esquema `mastra`) ─────────
 
 export interface ResultadoMemoria {
   hilos: number;
@@ -120,53 +118,76 @@ export interface ResultadoMemoria {
   puntajes: number;
 }
 
+// Lo que se usa de un pool de pg: consultas sueltas y un cliente para la transacción.
+export type PoolMastra = Pick<Pool, "query" | "connect">;
+
+// Las columnas de Mastra en Postgres van en camelCase: siempre entre comillas.
+const q = (identificador: string) => `"${identificador.replace(/"/g, '""')}"`;
+
 // Tablas de Mastra que pueden no existir según la versión: se omiten.
-async function existe(c: Client, tabla: string): Promise<boolean> {
-  const r = await c.execute({ sql: "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", args: [tabla] });
-  return r.rows.length > 0;
+async function existe(pool: PoolMastra, esquema: string, tabla: string): Promise<boolean> {
+  const r = await pool.query("SELECT to_regclass($1) IS NOT NULL AS hay", [`${q(esquema)}.${q(tabla)}`]);
+  return r.rows[0]?.hay === true;
 }
 
 // Borra los hilos `charla-*` (conversaciones de asistentes), sus mensajes,
-// estado, memoria de trabajo y los puntajes en vivo de esas conversaciones.
-// Los hilos `eval-*`, datasets y experimentos no se tocan.
-export async function limpiarMemoria(c: Client, { aplicar }: { aplicar: boolean }): Promise<ResultadoMemoria> {
+// estado, memoria de trabajo y observacional, y los puntajes en vivo de esas
+// conversaciones (tabla de puntajes y eventos de puntaje de la observabilidad).
+// Los hilos `eval-*`, datasets y experimentos no se tocan. Todo en una transacción.
+export async function limpiarMemoria(
+  pool: PoolMastra,
+  { aplicar, esquema = esquemaMastra() }: { aplicar: boolean; esquema?: string },
+): Promise<ResultadoMemoria> {
+  const t = (tabla: string) => `${q(esquema)}.${q(tabla)}`;
+  const hay = (tabla: string) => existe(pool, esquema, tabla);
+  const contar = async (sql: string) => numero((await pool.query(sql, [patron])).rows[0]?.n);
   const patron = `${PREFIJO_HILO}%`;
-  const recursosDeHilos = `SELECT DISTINCT resourceId FROM mastra_threads WHERE id LIKE ?`;
+  const recursosDeHilos = `SELECT DISTINCT "resourceId" FROM ${t("mastra_threads")} WHERE id LIKE $1`;
   const conteos: ResultadoMemoria = { hilos: 0, mensajes: 0, recursos: 0, puntajes: 0 };
-  const sentencias: { sql: string; args: string[] }[] = [];
+  const sentencias: string[] = [];
 
-  if (await existe(c, "mastra_threads")) {
-    conteos.hilos = numero((await c.execute({ sql: "SELECT count(*) AS n FROM mastra_threads WHERE id LIKE ?", args: [patron] })).rows[0].n);
-    if (await existe(c, "mastra_resources")) {
-      conteos.recursos = numero(
-        (await c.execute({ sql: `SELECT count(*) AS n FROM mastra_resources WHERE id IN (${recursosDeHilos})`, args: [patron] })).rows[0].n,
-      );
+  if (await hay("mastra_threads")) {
+    conteos.hilos = await contar(`SELECT count(*) AS n FROM ${t("mastra_threads")} WHERE id LIKE $1`);
+    if (await hay("mastra_resources")) {
+      conteos.recursos = await contar(`SELECT count(*) AS n FROM ${t("mastra_resources")} WHERE id IN (${recursosDeHilos})`);
       // Antes de borrar los hilos: la lista de recursos sale de ellos.
-      sentencias.push({ sql: `DELETE FROM mastra_resources WHERE id IN (${recursosDeHilos})`, args: [patron] });
+      sentencias.push(`DELETE FROM ${t("mastra_resources")} WHERE id IN (${recursosDeHilos})`);
     }
-    if (await existe(c, "mastra_observational_memory")) {
-      sentencias.push({
-        sql: `DELETE FROM mastra_observational_memory WHERE threadId LIKE ? OR resourceId IN (${recursosDeHilos})`,
-        args: [patron, patron],
-      });
+    if (await hay("mastra_observational_memory")) {
+      sentencias.push(
+        `DELETE FROM ${t("mastra_observational_memory")} WHERE "threadId" LIKE $1 OR "resourceId" IN (${recursosDeHilos})`,
+      );
     }
   }
-  if (await existe(c, "mastra_messages")) {
-    conteos.mensajes = numero((await c.execute({ sql: "SELECT count(*) AS n FROM mastra_messages WHERE thread_id LIKE ?", args: [patron] })).rows[0].n);
-    sentencias.push({ sql: "DELETE FROM mastra_messages WHERE thread_id LIKE ?", args: [patron] });
+  if (await hay("mastra_messages")) {
+    conteos.mensajes = await contar(`SELECT count(*) AS n FROM ${t("mastra_messages")} WHERE thread_id LIKE $1`);
+    sentencias.push(`DELETE FROM ${t("mastra_messages")} WHERE thread_id LIKE $1`);
   }
-  if (await existe(c, "mastra_thread_state")) sentencias.push({ sql: "DELETE FROM mastra_thread_state WHERE threadId LIKE ?", args: [patron] });
-  if (await existe(c, "mastra_scorers")) {
-    conteos.puntajes = numero((await c.execute({ sql: "SELECT count(*) AS n FROM mastra_scorers WHERE threadId LIKE ?", args: [patron] })).rows[0].n);
-    sentencias.push({ sql: "DELETE FROM mastra_scorers WHERE threadId LIKE ?", args: [patron] });
+  if (await hay("mastra_thread_state")) sentencias.push(`DELETE FROM ${t("mastra_thread_state")} WHERE "threadId" LIKE $1`);
+  for (const tabla of ["mastra_scorers", "mastra_score_events"]) {
+    if (!(await hay(tabla))) continue;
+    conteos.puntajes += await contar(`SELECT count(*) AS n FROM ${t(tabla)} WHERE "threadId" LIKE $1`);
+    sentencias.push(`DELETE FROM ${t(tabla)} WHERE "threadId" LIKE $1`);
   }
-  if (await existe(c, "mastra_threads")) sentencias.push({ sql: "DELETE FROM mastra_threads WHERE id LIKE ?", args: [patron] });
+  if (await hay("mastra_threads")) sentencias.push(`DELETE FROM ${t("mastra_threads")} WHERE id LIKE $1`);
 
-  if (aplicar && sentencias.length > 0) await c.batch(sentencias, "write");
+  if (aplicar && sentencias.length > 0) {
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      for (const sql of sentencias) await c.query(sql, [patron]);
+      await c.query("COMMIT");
+    } catch (error) {
+      await c.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      c.release();
+    }
+  }
   return conteos;
 }
 
-// ─── Observabilidad (Neon) ───────────────────────────────────────────────────
+// ─── Observabilidad (trazas de Mastra) ────────────────────────────────────────
 
 export interface RaizLigera {
   traceId: string;
@@ -217,25 +238,6 @@ export async function limpiarTrazas(store: StoreObservabilidad, { aplicar }: { a
   return { total: raices.length, aBorrar: ids.length, evals: raices.filter((r) => esTrazaDeEval(r.metadata)).length };
 }
 
-// ─── Respaldo ────────────────────────────────────────────────────────────────
-
-// Copia consistente de una base SQLite junto al original (VACUUM INTO funciona
-// con la app abierta). Devuelve la ruta del respaldo, o null si no es un archivo.
-// Solo mastra.db: la base de charla en Cloud SQL se respalda con sus backups
-// automáticos o `gcloud sql backups create` antes de reiniciar.
-async function abrirLibsql(url: string): Promise<Client> {
-  const c = createClient({ url, concurrency: 1, timeout: 5000 });
-  await c.execute("PRAGMA busy_timeout=5000");
-  return c;
-}
-
-export async function respaldar(c: Client, url: string, marca: string): Promise<string | null> {
-  if (!url.startsWith("file:")) return null;
-  const destino = url.slice("file:".length).replace(/(\.db)?$/, `.respaldo-${marca}.db`);
-  await c.execute({ sql: "VACUUM INTO ?", args: [destino] });
-  return destino;
-}
-
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 function hostDe(url: string): string {
@@ -250,42 +252,28 @@ function hostDe(url: string): string {
 
 async function principal() {
   const aplicar = process.argv.includes("--si");
-  const urlMastra = urlArchivo(process.env.MASTRA_DB_URL ?? "file:./data/mastra.db");
-  const urlObs = process.env.OBSERVABILIDAD_DATABASE_URL?.trim();
-  // Destinos, para confirmar antes de aplicar (del Postgres solo el host, nunca la contraseña).
-  console.log(`Bases: charla → ${hostDe(urlPorDefecto())} · mastra.db → ${urlMastra} · trazas → ${urlObs ? hostDe(urlObs) : "sin Postgres"}`);
+  const esquema = esquemaMastra();
+  // Destino, para confirmar antes de aplicar (del Postgres solo el host, nunca la contraseña).
+  // Mastra vive en la misma base que la app, en el esquema `${esquema}`.
+  console.log(`Base: ${hostDe(urlPorDefecto())} · app en su esquema · Mastra en «${esquema}»`);
   console.log(aplicar ? "Reiniciando datos para la charla…" : "Simulación (sin --si no se cambia nada):");
+  // Sin respaldo aquí: antes de aplicar, `gcloud sql backups create` (o los backups automáticos de Cloud SQL).
+  if (aplicar) console.log("  Respaldo: usa los backups de Cloud SQL (gcloud sql backups create) antes de reiniciar.");
 
-  // 0. Respaldo de mastra.db antes de cambiar nada. La base de charla (Cloud SQL)
-  // y las trazas de Neon no se respaldan aquí: usa los backups de Cloud SQL.
-  if (aplicar) {
-    const marca = new Date().toISOString().replace(/[:.]/g, "-");
-    const respaldoMastra = await abrirLibsql(urlMastra);
-    try {
-      console.log(`  Respaldo: ${await respaldar(respaldoMastra, urlMastra, marca)} (charla: usa los backups de Cloud SQL)`);
-    } finally {
-      respaldoMastra.close();
-    }
-  }
-
-  // 1. Trazas primero: si Jev consulta entre medio, no encuentra turnos que re-analizar.
-  if (urlObs) {
-    const almacen = crearAlmacenamiento();
+  const pool = crearPoolMastra();
+  try {
+    // 1. Trazas primero: si Jev consulta entre medio, no encuentra turnos que re-analizar.
+    const almacen = crearAlmacenamiento({ pool, esquema });
     const store = (await almacen.getStore("observability")) as unknown as StoreObservabilidad | undefined;
     if (!store) throw new Error("No hay store de observabilidad");
     const t = await limpiarTrazas(store, { aplicar });
     console.log(`  Trazas: ${t.aBorrar} de asistentes ${aplicar ? "borradas" : "a borrar"} · ${t.evals} de evals conservadas · ${t.total} en total`);
-  } else {
-    console.log("  Trazas: OBSERVABILIDAD_DATABASE_URL no está configurada; se omiten.");
-  }
 
-  // 2. Memoria del agente (mastra.db).
-  const mastraDb = await abrirLibsql(urlMastra);
-  try {
-    const m = await limpiarMemoria(mastraDb, { aplicar });
+    // 2. Memoria del agente y puntajes en vivo.
+    const m = await limpiarMemoria(pool, { aplicar, esquema });
     console.log(`  Memoria: ${m.hilos} conversaciones, ${m.mensajes} mensajes, ${m.recursos} perfiles de memoria, ${m.puntajes} puntajes en vivo`);
   } finally {
-    mastraDb.close();
+    await pool.end();
   }
 
   // 3. Base de charla (una transacción).

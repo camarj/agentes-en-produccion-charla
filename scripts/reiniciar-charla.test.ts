@@ -1,11 +1,10 @@
-import { createClient, type Client } from "@libsql/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { crearDbTemporal } from "../lib/db/prueba";
+import { crearAlmacenamientoDePrueba } from "../src/mastra/pruebas/almacenamiento";
 import {
   limpiarMemoria,
   limpiarTrazas,
   reiniciarCharlaDb,
-  respaldar,
   trazasABorrar,
   VALORES_INICIALES,
   type RaizLigera,
@@ -93,37 +92,60 @@ describe("reiniciarCharlaDb", () => {
   });
 });
 
-describe("limpiarMemoria", () => {
-  let c: Client;
+describe("limpiarMemoria (tablas reales de Mastra en Postgres)", () => {
+  let prueba: ReturnType<typeof crearAlmacenamientoDePrueba>;
+  const ahora = new Date();
   beforeEach(async () => {
-    c = createClient({ url: ":memory:" });
-    await c.batch(
-      [
-        "CREATE TABLE mastra_threads (id TEXT, resourceId TEXT)",
-        "CREATE TABLE mastra_messages (id TEXT, thread_id TEXT)",
-        "CREATE TABLE mastra_resources (id TEXT)",
-        "CREATE TABLE mastra_scorers (id TEXT, threadId TEXT)",
-        "INSERT INTO mastra_threads VALUES ('charla-a1', 'a1'), ('charla-a1-xyz', 'a1'), ('eval-v1-c1', 'eval-v1-c1')",
-        "INSERT INTO mastra_messages VALUES ('m1', 'charla-a1'), ('m2', 'charla-a1-xyz'), ('m3', 'eval-v1-c1')",
-        "INSERT INTO mastra_resources VALUES ('a1'), ('eval-v1-c1')",
-        "INSERT INTO mastra_scorers VALUES ('s1', 'charla-a1'), ('s2', 'eval-v1-c1'), ('s3', NULL)",
-      ],
-      "write",
-    );
+    prueba = crearAlmacenamientoDePrueba("reinicio");
+    await prueba.almacenamiento.init();
+    const memoria = (await prueba.almacenamiento.getStore("memory"))!;
+    for (const [id, resourceId] of [["charla-a1", "a1"], ["charla-a1-xyz", "a1"], ["eval-v1-c1", "eval-v1-c1"]]) {
+      await memoria.saveThread({ thread: { id, resourceId, title: "", createdAt: ahora, updatedAt: ahora } });
+    }
+    await memoria.saveMessages({
+      messages: [
+        ["m1", "charla-a1", "a1"],
+        ["m2", "charla-a1-xyz", "a1"],
+        ["m3", "eval-v1-c1", "eval-v1-c1"],
+      ].map(([id, threadId, resourceId]) => ({
+        id,
+        threadId,
+        resourceId,
+        role: "user" as const,
+        createdAt: ahora,
+        content: { format: 2 as const, parts: [{ type: "text" as const, text: "hola" }] },
+      })),
+    });
+    for (const id of ["a1", "eval-v1-c1"]) {
+      await memoria.saveResource({ resource: { id, workingMemory: "", metadata: {}, createdAt: ahora, updatedAt: ahora } });
+    }
+    const { pool, esquema } = prueba;
+    for (const [id, hilo] of [["s1", "charla-a1"], ["s2", "eval-v1-c1"], ["s3", null]]) {
+      await pool.query(
+        `INSERT INTO "${esquema}".mastra_scorers (id, "scorerId", "runId", scorer, score, input, output, "entityType", entity, "entityId", source, "threadId", "createdAt", "updatedAt")
+         VALUES ($1, 'fidelidad', 'r', '{}', 1, '{}', '{}', 'AGENT', '{}', 'charla', 'LIVE', $2, now(), now())`,
+        [id, hilo],
+      );
+    }
   });
-  afterEach(() => c.close());
 
-  const cuenta = async (sql: string) => Number((await c.execute(sql)).rows[0].n);
+  const ids = async (tabla: string) =>
+    (await prueba.pool.query(`SELECT id FROM "${prueba.esquema}".${tabla} ORDER BY id`)).rows.map((r) => r.id);
 
-  it("borra conversaciones de asistentes y conserva las de evals (tablas opcionales ausentes)", async () => {
-    expect(await limpiarMemoria(c, { aplicar: false })).toEqual({ hilos: 2, mensajes: 2, recursos: 1, puntajes: 1 });
-    expect(await cuenta("SELECT count(*) AS n FROM mastra_messages")).toBe(3);
+  it("sin aplicar solo cuenta; al aplicar borra conversaciones de asistentes y conserva las de evals", async () => {
+    const { pool, esquema } = prueba;
+    expect(await limpiarMemoria(pool, { aplicar: false, esquema })).toEqual({ hilos: 2, mensajes: 2, recursos: 1, puntajes: 1 });
+    expect(await ids("mastra_messages")).toEqual(["m1", "m2", "m3"]);
 
-    await limpiarMemoria(c, { aplicar: true });
-    expect((await c.execute("SELECT id FROM mastra_threads")).rows.map((r) => r.id)).toEqual(["eval-v1-c1"]);
-    expect((await c.execute("SELECT id FROM mastra_messages")).rows.map((r) => r.id)).toEqual(["m3"]);
-    expect((await c.execute("SELECT id FROM mastra_resources")).rows.map((r) => r.id)).toEqual(["eval-v1-c1"]);
-    expect(await cuenta("SELECT count(*) AS n FROM mastra_scorers")).toBe(2);
+    await limpiarMemoria(pool, { aplicar: true, esquema });
+    expect(await ids("mastra_threads")).toEqual(["eval-v1-c1"]);
+    expect(await ids("mastra_messages")).toEqual(["m3"]);
+    expect(await ids("mastra_resources")).toEqual(["eval-v1-c1"]);
+    expect(await ids("mastra_scorers")).toEqual(["s2", "s3"]);
+  });
+
+  it("si Mastra todavía no creó sus tablas, no falla y no hay nada que borrar", async () => {
+    expect(await limpiarMemoria(prueba.pool, { aplicar: true, esquema: "sin_tablas" })).toEqual({ hilos: 0, mensajes: 0, recursos: 0, puntajes: 0 });
   });
 });
 
@@ -169,26 +191,5 @@ describe("limpiarTrazas", () => {
     await limpiarTrazas(store, { aplicar: true });
     expect(borradas.map((l) => l.length)).toEqual([200, 200, 5]);
     expect(borradas.flat().some((id) => Number(id.slice(1)) % 10 === 0)).toBe(false);
-  });
-});
-
-describe("respaldar", () => {
-  it("copia la base completa junto al original", async () => {
-    const fs = await import("node:fs");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "respaldo-"));
-    const url = `file:${path.join(dir, "charla.db")}`;
-    const c = createClient({ url });
-    await c.execute("CREATE TABLE t (x)");
-    await c.execute("INSERT INTO t VALUES (1), (2)");
-    const destino = await respaldar(c, url, "prueba");
-    c.close();
-    expect(destino).toBe(path.join(dir, "charla.respaldo-prueba.db"));
-    const copia = createClient({ url: `file:${destino}` });
-    expect(Number((await copia.execute("SELECT count(*) AS n FROM t")).rows[0].n)).toBe(2);
-    copia.close();
-    expect(await respaldar(c, ":memory:", "x")).toBeNull();
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

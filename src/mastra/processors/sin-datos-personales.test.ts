@@ -1,6 +1,6 @@
 import { Agent } from "@mastra/core/agent";
 import { RequestContext } from "@mastra/core/request-context";
-import { LibSQLStore } from "@mastra/libsql";
+import { crearAlmacenamientoDePrueba } from "../pruebas/almacenamiento";
 import { Memory } from "@mastra/memory";
 import { describe, expect, it, vi } from "vitest";
 import type { PerfilPrivado } from "@/lib/db/asistentes";
@@ -217,7 +217,7 @@ describe("SinDatosPersonales con un agente real", () => {
   });
 
   it("la memoria guarda el mensaje seguro, no el dato personal", async () => {
-    const storage = new LibSQLStore({ id: "prueba-privacidad", url: "file::memory:" });
+    const storage = crearAlmacenamientoDePrueba("privacidad").almacenamiento;
     const memoria = new Memory({ storage });
     const a = agente(cargar(), ["Está ", "María José ", "Núñez", " en la sala."], { memory: memoria });
     await leerStream(a, contextoAndrea(), { memory: { thread: "h1", resource: "r1" } });
