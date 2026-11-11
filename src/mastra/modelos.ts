@@ -1,4 +1,7 @@
 import { createVertex } from "@ai-sdk/google-vertex";
+import { ID_GEMINI } from "./modelos-ids";
+
+export { ID_GEMINI, MODELO_LIGERO, MODELO_LIGERO_RESPALDO, MODELO_PRINCIPAL, MODELO_RESPALDO } from "./modelos-ids";
 
 // Modelos del proyecto. Desde el DevFest (decisión de Raúl, 2026-11-10; PRD
 // §15 G5): Gemini es el principal y OpenAI el respaldo. Gemini va por Vertex
@@ -7,11 +10,6 @@ import { createVertex } from "@ai-sdk/google-vertex";
 // El principal se identifica como «google-vertex/gemini-3.8-flash» en todo el
 // código (panel, precios, evals, interruptores de caos); el modelo real lo
 // crea `modeloPrincipal()`.
-export const ID_GEMINI = "gemini-3.8-flash";
-export const MODELO_PRINCIPAL = `google-vertex/${ID_GEMINI}`;
-export const MODELO_RESPALDO = "openai/gpt-6-luna";
-export const MODELO_LIGERO = "openai/gpt-6-luna"; // guardrails y jueces (sin cambio)
-export const MODELO_LIGERO_RESPALDO = "anthropic/claude-haiku-4-5";
 
 // Credenciales de Vertex (las lee el proveedor del entorno):
 // - GOOGLE_VERTEX_PROJECT + credenciales por defecto de Google (cuenta de
