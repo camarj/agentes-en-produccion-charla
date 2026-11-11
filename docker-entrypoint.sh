@@ -3,19 +3,15 @@
 #   web     → Next.js standalone en $PORT (3000 por defecto)
 #   studio  → servidor Mastra + Studio en $PORT (4111 por defecto)
 #   otro    → se ejecuta tal cual (p. ej. `pnpm evals`, `sh`)
-# Antes de arrancar web o studio aplica las migraciones de charla.db (idempotente).
-# Las rutas relativas de las bases (./data/...) se resuelven contra
-# PROYECTO_RAIZ=/app (ver lib/rutas.ts), así los dos servicios comparten /app/data.
+# Antes de arrancar web o studio aplica las migraciones de la base Postgres
+# (DATABASE_URL, Cloud SQL). Son idempotentes y usan un candado de Postgres,
+# así varias instancias de Cloud Run pueden arrancar a la vez.
+# Cloud Run no tiene disco persistente: /app/data solo guarda archivos temporales.
 set -e
 cd /app
 
-if [ ! -w /app/data ]; then
-  echo "[entrypoint] /app/data no se puede escribir con el usuario $(id -u). Revisa el volumen." >&2
-  exit 1
-fi
-
 migrar() {
-  echo "[entrypoint] migrando charla.db"
+  echo "[entrypoint] aplicando migraciones de la base"
   node node_modules/tsx/dist/cli.mjs lib/db/migrate.ts
 }
 
