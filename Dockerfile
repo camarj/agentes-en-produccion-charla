@@ -39,6 +39,9 @@ COPY --chown=node:node . .
 # construir: debe llegar como argumento de build (no es secreto).
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
+# Presentación activa (lib/tramos.ts): «espol» (por defecto) o «devfest».
+ARG NEXT_PUBLIC_PRESENTACION="espol"
+ENV NEXT_PUBLIC_PRESENTACION=$NEXT_PUBLIC_PRESENTACION
 RUN pnpm build \
  && cp -r public .next/standalone/public \
  && cp -r .next/static .next/standalone/.next/static \

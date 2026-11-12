@@ -37,7 +37,7 @@ function metricasBase(): MetricasPanel {
 
 function interruptoresBase(): EstadoInterruptores {
   return {
-    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 12 },
+    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 5 },
     ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, limite_gemini: null, base_datos_lenta: null, kill_switch: null },
   };
 }
@@ -311,7 +311,7 @@ describe("Panel del speaker", () => {
     const boton = (i: number) => screen.getByRole("button", { name: `Láminas ${TRAMOS[i].desde}–${TRAMOS[i].hasta} · ${TRAMOS[i].nombre}` });
 
     it("3 botones, uno por tramo; la lámina guardada marca su tramo", async () => {
-      estadoInt.valores.lamina_actual = 20;
+      estadoInt.valores.lamina_actual = 15;
       await montar();
       await waitFor(() => expect(boton(1).getAttribute("aria-pressed")).toBe("true"));
       expect(boton(0).getAttribute("aria-pressed")).toBe("false");
@@ -323,10 +323,10 @@ describe("Panel del speaker", () => {
       const u = userEvent.setup();
       await montar();
       await u.click(boton(2));
-      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 40 } });
+      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 26 } });
       await waitFor(() => expect(boton(2).getAttribute("aria-pressed")).toBe("true"));
       await u.click(boton(1));
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 32 });
+      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 19 });
     });
 
     it("elegir el tramo que ya está elegido no guarda nada", async () => {
