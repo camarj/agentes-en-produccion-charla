@@ -30,7 +30,7 @@ export const TRAMOS: readonly Tramo[] = [
     hasta: 13,
     nombre: "Conceptos",
     preguntas: [
-      "¿Qué diferencia a un agente de un chatbot?",
+      "¿Qué es un agente de IA?",
       "¿Qué es el loop de un agente?",
       "¿Qué es el harness y por qué importa?",
     ],
