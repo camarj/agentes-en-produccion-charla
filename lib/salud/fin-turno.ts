@@ -23,6 +23,15 @@ export interface DatosFinTurno {
   traceId: string | null;
 }
 
+// Qué modelo respondió, según la respuesta final de Mastra. Con la lista de
+// modelos del agente (principal por función + respaldo) y Gemini por Vertex,
+// Mastra deja `modelId` vacío y lo informa en `modelMetadata.modelId`.
+export function modeloDeRespuesta(
+  respuesta: { modelId?: string; modelMetadata?: { modelId?: string } } | null | undefined,
+): string | null {
+  return respuesta?.modelId || respuesta?.modelMetadata?.modelId || null;
+}
+
 export function filaDeTurno(d: DatosFinTurno): FilaTurno {
   const base = { iniciadoMs: d.iniciadoMs, traceId: d.traceId, motivoBloqueo: null, tipoFalla: null };
   const duracion = d.finMs === null ? null : Math.max(0, d.finMs - d.iniciadoMs);

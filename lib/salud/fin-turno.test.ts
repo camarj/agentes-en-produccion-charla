@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filaDeTurno, type DatosFinTurno } from "./fin-turno";
+import { filaDeTurno, modeloDeRespuesta, type DatosFinTurno } from "./fin-turno";
 
 const INICIO = Date.parse("2026-12-05T19:00:00.000Z");
 
@@ -61,5 +61,22 @@ describe("filaDeTurno: cómo cerró un turno de chat", () => {
 
   it("el turno nunca terminó (sin desenlace) → falla de tiempo", () => {
     expect(filaDeTurno(datos({ desenlace: null, finMs: null }))).toMatchObject({ resultado: "falla", tipoFalla: "tiempo", duracionMs: null });
+  });
+});
+
+describe("modeloDeRespuesta: qué modelo respondió según la respuesta de Mastra", () => {
+  it("usa `modelId` cuando viene", () => {
+    expect(modeloDeRespuesta({ modelId: "gpt-6-luna" })).toBe("gpt-6-luna");
+  });
+
+  it("con Gemini por Vertex `modelId` llega vacío: usa `modelMetadata.modelId`", () => {
+    const respuesta = { modelId: undefined, modelMetadata: { modelId: "gemini-3.8-flash", modelProvider: "google.vertex.chat" } };
+    expect(modeloDeRespuesta(respuesta)).toBe("gemini-3.8-flash");
+    expect(modeloDeRespuesta({ modelId: "", modelMetadata: { modelId: "gemini-3.8-flash" } })).toBe("gemini-3.8-flash");
+  });
+
+  it("sin respuesta o sin ningún dato → null", () => {
+    expect(modeloDeRespuesta(undefined)).toBeNull();
+    expect(modeloDeRespuesta({})).toBeNull();
   });
 });

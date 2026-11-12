@@ -17,7 +17,7 @@ import { interruptores } from "@/lib/db/interruptores";
 import { sesiones } from "@/lib/db/sesiones";
 import { costeEstimadoTurno, presupuesto, presupuestoMaximoUsd } from "@/lib/presupuesto";
 import { limitadorChat } from "@/lib/rate-limit";
-import { filaDeTurno } from "@/lib/salud/fin-turno";
+import { filaDeTurno, modeloDeRespuesta } from "@/lib/salud/fin-turno";
 import { anotarEvento, anotarEventosDeTurno, eventosDeTurno } from "@/lib/salud/registro";
 import { crearSenales, type SenalesTurno } from "@/lib/salud/senales";
 import { errorInterno, leerJson, noAutenticado, respuestaError } from "@/lib/respuestas";
@@ -65,7 +65,7 @@ async function cerrarTurno(turno: Turno, iniciadoMs: number, senales: SenalesTur
     const salida = turno.salidaAgente;
     const r = await conTope(Promise.all([salida.usage, salida.response]), ESPERA_MAXIMA_USO_MS);
     uso = r?.[0];
-    modelo = r?.[1]?.modelId;
+    modelo = modeloDeRespuesta(r?.[1] as Parameters<typeof modeloDeRespuesta>[0]) ?? undefined;
   } catch {
     // Turno fallido o cancelado: queda el costo fijo de guardrails y jueces.
   }
