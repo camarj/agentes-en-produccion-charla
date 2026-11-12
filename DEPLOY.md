@@ -1,195 +1,220 @@
-# DEPLOY · Agente de la charla en Dokploy
+# DEPLOY · Agente de la charla en Google Cloud
 
-Handoff para el agente que despliega. Todo lo que hay que hacer está aquí; si algo no está, pregunta a Raúl antes de improvisar.
+Guía para publicar, operar y apagar la demo. Todo corre en Google Cloud: el modelo (Gemini en Vertex AI), los servidores (Cloud Run) y los datos (Cloud SQL para PostgreSQL). Si algo no está aquí, pregunta a Raúl antes de improvisar.
 
-- **Repo:** https://github.com/camarj/agentes-en-produccion-charla (rama `main`, público)
-- **Servidor:** Dokploy de Inteliside, **EE. UU.** (pasa a Cloud Run en T4). Todos los datos, de la app y de Mastra, están en **una sola base Cloud SQL para PostgreSQL** (`DATABASE_URL`); Neon y `mastra.db` ya no se usan.
-- **Qué se despliega:** una sola imagen (`Dockerfile` en la raíz) usada por **dos servicios**: `web` (la app de los asistentes + panel del speaker) y `studio` (Mastra Studio + API de Mastra).
-- **Cuándo:** la charla es el sábado 2026-09-26. Tras desplegar se corren los evals en producción y sus resultados **se quedan** para la demo.
-- **Dominios en uso:** app `charla.codetrain.cloud`, Studio `studio-charla.codetrain.cloud`.
-
----
-
-## 1. Qué necesitas de Raúl antes de empezar
-
-| Dato | Para qué |
-| --- | --- |
-| Dominio de la app (el del QR), p. ej. `charla.<dominio>` | Servicio `web` |
-| Dominio de Studio, p. ej. `studio.<dominio>` | Servicio `studio` |
-| Valores secretos de su `.env` local (ver tabla §3) | Variables de ambos servicios |
-| Usuario y contraseña para el Basic Auth de Studio | Proteger Studio |
-| Archivo de inscritos real: `Cómo lograr que tu agente de IA sobreviva en producción - Invitados - 2026-09-23-18-43-16.xlsx` | **No está en el repo** (datos personales). Raúl te lo pasa por un canal privado; nunca lo subas a git |
-
-Ambos dominios deben tener un registro DNS **A** apuntando a la IP del servidor.
+- **Repo:** https://github.com/camarj/agentes-en-produccion-charla
+- **Proyecto de Google Cloud:** `eng-particle-514416-q3`, región `us-east1`.
+- **Charlas:** ESPOL (2026-11-25, 26 láminas) y Google DevFest Guayaquil (2026-12-05, 25 láminas, ~1000 personas).
+- **Una sola imagen** (`Dockerfile`), usada por dos servicios: `charla-web` (la app de los asistentes y el panel del speaker) y `charla-studio` (Mastra Studio y la API de Mastra).
+- Neon, Dokploy, SQLite (`charla.db`) y `mastra.db` ya **no** se usan.
 
 ---
 
-## 2. Servicios en Dokploy
+## 1. Qué hay en Google
 
-Crea un proyecto (p. ej. `agente-charla`) con dos aplicaciones desde el mismo repo:
-
-| | `web` | `studio` |
+| Recurso | Nombre | Detalle |
 | --- | --- | --- |
-| Origen | GitHub `camarj/agentes-en-produccion-charla`, rama `main` | igual |
-| Build | Dockerfile, ruta `./Dockerfile`, contexto `.` | igual |
-| Comando | por defecto (`web`) | **`studio`** (sobrescribir el comando/args del contenedor) |
-| Puerto interno | `3000` | `4111` |
-| Volumen | nombre **`agente-charla-data`** montado en **`/app/data`** | **el mismo volumen**, misma ruta |
-| Health check | `GET /api/sesion` → 200 | `GET /api/agents` → 200 |
-| Stop grace period | 15 s (las trazas se envían al cerrar) | 15 s |
-| Réplicas | **1** (rate limit en memoria + SQLite en archivo) | **1** |
-| Dominio | HTTPS con Let's Encrypt | HTTPS con Let's Encrypt + **Basic Auth** (Dokploy → Security) |
+| App pública | Cloud Run `charla-web` | `https://charla.codetrain.cloud`. Comando `web`, puerto 8080. 2 CPU, 2 GiB, CPU siempre asignada. **Mínimo 1 y máximo 6 copias, 25 pedidos simultáneos por copia** (ver §7) |
+| Studio | Cloud Run `charla-studio` | `https://charla-studio-20032347418.us-east1.run.app`. Comando `studio`. 1 CPU, 1 GiB. Protegido con **IAP**: solo entran las cuentas de Google autorizadas (hoy `raulj.camacho@gmail.com` e `inteliside.mail@gmail.com`). Se agregan personas en la consola: Seguridad → Identity-Aware Proxy → `charla-studio` → Agregar principal con el rol «Usuario de aplicación web protegida con IAP» |
+| Base de datos | Cloud SQL `charla-db` | PostgreSQL 17, `db-custom-1-3840`, `us-east1`, flag `max_connections=200`. Base `charla`, usuario `charla`. Conexión `eng-particle-514416-q3:us-east1:charla-db`. Las tablas de la app van en `public` y las de Mastra (memoria, puntajes, experimentos, trazas) en el esquema `mastra` |
+| Imágenes | Artifact Registry `charla` | `us-east1-docker.pkg.dev/eng-particle-514416-q3/charla/app:<sha>` |
+| Secretos | Secret Manager | `database-url`, `openai-api-key`, `anthropic-api-key`, `typesafe-api-key`, `panel-password`, `session-secret` |
+| Cuenta de servicio | `charla-run@eng-particle-514416-q3.iam.gserviceaccount.com` | La usan ambos servicios: Vertex AI (sin clave, con las credenciales del servicio), Cloud SQL y lectura de secretos |
+| Dominio | `charla.codetrain.cloud` | Mapeo de dominio de Cloud Run. En Cloudflare, registro **CNAME** `charla` → `ghs.googlehosted.com`, **sin proxy** (nube gris). El certificado lo gestiona Google |
+| Inicio con Google | Cliente OAuth `20032347418-fqc8…apps.googleusercontent.com` | Orígenes autorizados: `https://charla.codetrain.cloud` y `http://localhost:3001` |
 
-Notas:
-- La imagen corre como usuario `node` (uid 1000) y el entrypoint verifica que `/app/data` sea escribible; si el volumen se crea como root, dale permisos a uid 1000.
-- Al arrancar, cada contenedor corre `pnpm db:migrate` (idempotente) y luego el servicio.
-- `web` sirve `node server.js` (Next standalone); `studio` sirve `node .mastra/output/index.mjs` con `MASTRA_STUDIO_PATH`, que es el modo producción documentado por Mastra (`mastra build --studio`).
+Conexiones a la base: cada copia usa hasta 10 (app) + 10 (Mastra). Con 6 copias de `web` y Studio son 140 como máximo, debajo de las 200 de Cloud SQL. Si subes el máximo de copias, revisa esta cuenta.
 
 ---
 
-## 3. Variables de entorno
+## 2. Variables de entorno
 
-Los valores secretos los tiene Raúl en su `.env` local. **Nunca** los pongas en el repo ni en logs.
+Los secretos viven en Secret Manager. **Nunca** los pongas en el repo, en logs ni en el chat.
 
-| Variable | Obligatoria | Servicio | Para qué | Valor |
-| --- | --- | --- | --- | --- |
-| `GOOGLE_VERTEX_PROJECT` | sí (salvo modo express) | ambos | modelo principal Gemini `gemini-3.8-flash` en Vertex AI. Las credenciales salen de la cuenta de servicio del entorno (en Cloud Run, la del servicio, con rol «Usuario de Vertex AI») o de `GOOGLE_APPLICATION_CREDENTIALS` en local | ID del proyecto de Google Cloud |
-| `GOOGLE_VERTEX_LOCATION` | no | ambos | región de Vertex. Vacía = `global` (la más barata para Gemini 3.8 Flash) | `global` |
-| `GOOGLE_VERTEX_API_KEY` | no | ambos | alternativa a proyecto + cuenta de servicio: clave de Vertex en **modo express**. Si existe, se usa en lugar de las credenciales | de Raúl |
-| `OPENAI_API_KEY` | sí | ambos | modelo de respaldo (`openai/gpt-6-luna`), guardrails, jueces, dictado por voz | de Raúl |
-| `ANTHROPIC_API_KEY` | sí | ambos | respaldo de guardrails y jueces (`anthropic/claude-haiku-4-5`) | de Raúl |
-| `SESSION_SECRET` | sí | ambos (`studio` lo usa en el eval R04) | firma de la cookie de sesión, ≥ 16 caracteres | de Raúl (o uno nuevo de 32+ caracteres: invalida sesiones previas, no importa hoy) |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | sí | `web` (**argumento de build** y variable de entorno) | entrar con Google: el navegador muestra el botón con este ID y el servidor verifica que la credencial se emitió para él. Sin él nadie puede entrar. No es secreto | ID de cliente OAuth «Aplicación web» de Google Cloud, con el dominio público en «Orígenes de JavaScript autorizados» |
-| `PANEL_PASSWORD` | sí | `web` | Basic Auth de `/panel`. Sin ella el panel queda cerrado | de Raúl |
-| `STUDIO_URL` | sí | ambos | enlace «Abrir Mastra Studio» del panel y enlaces «ver traza» del registro de eventos (`<STUDIO_URL>/traces?traceId=…`) | `https://<dominio-studio>` |
-| `PRESUPUESTO_MAX_USD` | sí | `web` | tope de gasto; al alcanzarlo el chat se pausa solo. Vacía = sin tope | `120` (DevFest, ~1000 personas; G6) |
-| `MAX_MENSAJES_ASISTENTE` | no | `web` | tope de preguntas por asistente. Vacía = 15 | `15` (charlas de 60 min; G6) |
-| `DATABASE_URL` | sí | ambos | base de la app (asistentes, sesiones, cola, votos, interruptores, presupuesto, turnos, Jev) en **PostgreSQL** (Cloud SQL). Reemplaza a `DATABASE_PATH` y `charla.db`. Las migraciones se aplican al arrancar con un cerrojo consultivo (varios contenedores a la vez no chocan). En Cloud Run: `postgres://USUARIO:CLAVE@/charla?host=/cloudsql/PROYECTO:REGION:INSTANCIA` (detalle en T4) | URL `postgres://` de Raúl |
-| `MASTRA_ESQUEMA` | no | — | **no ponerla**: Mastra (memoria, hilos, puntajes, workflows, datasets, experimentos y trazas) usa la misma `DATABASE_URL`, en el esquema `mastra`. El usuario de la base necesita permiso para crear ese esquema y sus tablas (Mastra las crea al arrancar). Conexiones: hasta 10 (app) + 4 (Mastra) por proceso; `web` y `studio` suman 28 como máximo | — |
-| `APAGADO_ESPERA_MS` | no | `web` | espera al apagar (por defecto 8000) | — |
-| `PORT`, `HOSTNAME`, `MASTRA_HOST`, `MASTRA_STUDIO_PATH`, `PROYECTO_RAIZ`, `NODE_ENV` | — | — | las fija la imagen; **no tocar** | — |
-| `EVALS_MASTRA_ESQUEMA`, `EVALS_LAMINAS_HTML` | — | — | **no poner**: solo pruebas locales | — |
+| Variable | Servicio | Para qué | Valor |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | ambos | Base de la app y de Mastra. Las migraciones se aplican al arrancar, con un cerrojo consultivo: varias copias a la vez no chocan | secreto `database-url`: `postgres://charla:<clave>@/charla?host=/cloudsql/eng-particle-514416-q3:us-east1:charla-db` |
+| `GOOGLE_VERTEX_PROJECT` | ambos | Gemini `gemini-3.8-flash` en Vertex AI | `eng-particle-514416-q3` |
+| `GOOGLE_VERTEX_LOCATION` | ambos | Región de Vertex | `global` |
+| `OPENAI_API_KEY` | ambos | Modelo de respaldo, guardia, jueces y dictado por voz | secreto `openai-api-key` |
+| `ANTHROPIC_API_KEY` | ambos | Respaldo del guardia y de los jueces | secreto `anthropic-api-key` |
+| `TYPESAFE_API_KEY` | `web` | Análisis de la sala (Jev) | secreto `typesafe-api-key` |
+| `PANEL_PASSWORD` | `web` | Contraseña de `/panel` | secreto `panel-password` |
+| `SESSION_SECRET` | `web` | Firma de la cookie de sesión. Cambiarlo cierra todas las sesiones | secreto `session-secret` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | `web` | Botón «Entrar con Google». Va como **argumento de build** (lo pone `cloudbuild.yaml`) y como variable | el ID de cliente OAuth |
+| `NEXT_PUBLIC_PRESENTACION` | build | Presentación activa (partes de la charla y preguntas sugeridas, `lib/tramos.ts`): `espol` o `devfest`. Solo es **argumento de build** | `cloudbuild.yaml` → `_PRESENTACION` |
+| `STUDIO_URL` | `web` | Enlace «Abrir Mastra Studio» y «ver traza» del panel | la URL de Studio |
+| `PRESUPUESTO_MAX_USD` | `web` | Tope de gasto. Al alcanzarlo el chat se pausa solo | `120` |
+| `MAX_MENSAJES_ASISTENTE` | `web` | Tope de preguntas por persona | `15` |
+| `ESPERA_PRIMER_TROZO_MS` | `web` | Plan B por tiempo: si Gemini no empieza a responder en este plazo, se reintenta y luego responde el respaldo. Opcional | por defecto `15000` |
+| `MASTRA_ESQUEMA`, `EVALS_MASTRA_ESQUEMA`, `EVALS_LAMINAS_HTML` | — | **No ponerlas**: solo pruebas locales | — |
 
-`PUBLIC_URL` existe en el `.env` local pero el código no la usa.
+Cambiar una variable no exige construir la imagen otra vez:
 
----
-
-## 4. Traefik / proxy
-
-- HTTPS obligatorio en ambos dominios: la cookie de sesión es `Secure`, la PWA solo se instala con HTTPS y el panel usa Basic Auth.
-- **No** activar el middleware `buffering` ni un CDN que almacene en búfer: `/api/chat` hace streaming.
-- **No** cachear `/sw.js` (la app ya lo envía con `no-cache, no-store`). Si hay Cloudflare delante, excluye `/sw.js` y `/api/*` de caché.
-- Studio no tiene autenticación propia: el Basic Auth de Dokploy es la protección. Comprueba que sin credenciales responde 401.
+```bash
+gcloud run services update charla-web --region=us-east1 --project=eng-particle-514416-q3 \
+  --update-env-vars=PRESUPUESTO_MAX_USD=150
+```
 
 ---
 
-## 5. Primer despliegue, paso a paso
+## 3. Publicar una versión nueva
 
-1. Crea los dos servicios (§2) con sus variables (§3) y dominios (§4). Despliega `web` y luego `studio`.
-2. **Espera un momento** tras el primer arranque: Mastra prepara sus tablas de trazas (esquema `mastra`) en segundo plano. Los votos 👍/👎 que lleguen antes se guardan en la tabla `feedback` de la app pero no llegan a Studio.
-3. Comprueba:
-   - `https://<dominio-app>/` → 200 (pantalla negra con el logo de Inteliside).
-   - `https://<dominio-app>/api/sesion` → `{"autenticado":false,...}`.
-   - `https://<dominio-app>/panel` sin credenciales → 401.
-   - `https://<dominio-studio>/` sin credenciales → 401; con credenciales carga Studio y en *Agents* aparece `charla`.
-4. **Importar datos** (Dokploy → servicio `web` → Terminal; comparten volumen, así que basta en uno):
+1. Corre las pruebas en local: `pnpm test`, `pnpm lint`, `pnpm exec next typegen && pnpm exec tsc --noEmit`.
+2. Construye la imagen en Cloud Build (tarda unos 4 minutos). La etiqueta es el commit:
    ```bash
-   pnpm importar:laminas agentes-produccion-taller-v43-before-slide14-v2.html
-   # Esperado: 40 láminas importadas.
-   # Ojo: importar solo agrega o actualiza (upsert); no borra láminas que ya no
-   # existan. Si la presentación nueva tuviera MENOS láminas, borra las sobrantes
-   # (DELETE FROM laminas WHERE numero > N) y vuelve a importar.
+   T=$(git rev-parse --short HEAD)
+   gcloud builds submit --config cloudbuild.yaml \
+     --substitutions=_TAG=$T,_PRESENTACION=espol \
+     --project=eng-particle-514416-q3 .
    ```
-   Inscritos: copia el `.xlsx` que te pase Raúl dentro del volumen (p. ej. `scp` al servidor y `docker cp <archivo> <contenedor-web>:/app/data/inscritos.xlsx`), luego:
+   Para el DevFest usa `_PRESENTACION=devfest` (ver §5).
+3. Publica la misma imagen en los dos servicios:
    ```bash
-   pnpm importar:inscritos /app/data/inscritos.xlsx
-   # Esperado: 26 filas leídas, 25 importadas, 1 omitida (speaker), 0 inválidas.
-   rm /app/data/inscritos.xlsx   # no dejes el archivo con datos personales en el volumen
+   I=us-east1-docker.pkg.dev/eng-particle-514416-q3/charla/app:$T
+   gcloud run deploy charla-web    --image=$I --region=us-east1 --project=eng-particle-514416-q3 --quiet
+   gcloud run deploy charla-studio --image=$I --region=us-east1 --project=eng-particle-514416-q3 --quiet
    ```
-   Si Raúl tiene una versión más nueva de la presentación, debe subirla al repo y redesplegar antes de importar.
+   `gcloud run deploy` conserva las variables, secretos, la conexión a Cloud SQL y la escala del servicio.
+4. Comprueba:
+   - `https://charla.codetrain.cloud/` → 200.
+   - `https://charla.codetrain.cloud/api/sesion` → `{"autenticado":false,...}`.
+   - `https://charla.codetrain.cloud/panel` sin contraseña → 401.
+   - Studio en el navegador → pide la cuenta de Google y luego muestra el agente `charla`.
+   - Una pregunta real: responde y en el panel aparece «Gemini 3.8 Flash».
 
-   **Notas del speaker:** desde el commit `540fe53` las notas se leen de la lista JSON del HTML. Si el despliegue anterior era previo a `540fe53`, después de desplegar `540fe53` o posterior **vuelve a correr `pnpm importar:laminas …`** (esperado: 40 láminas, 30 con notas). El cambio de la búsqueda del 2026-09-25 (lámina completa y prefijos, `303a333`) es del lado de la consulta: **no** exige reimportar.
-5. **Prueba funcional con un email inscrito** (pídele a Raúl uno de ejemplo, o usa el suyo si está inscrito): entrar, ver «Hola, <nombre>.», hacer una pregunta, ver la respuesta con la etiqueta de lámina, votar 👍. En Studio → Observability → Traces aparece la traza y su pestaña **Feedback** muestra el voto. En `/panel` suben «Mensajes» y «Votos».
-
----
-
-## 6. Evals en producción (los resultados se quedan para la charla)
-
-En el contenedor **`studio`** (Terminal). Cada corrida: ~3–4 min, ~0,20 USD.
-
-```bash
-pnpm evals                                   # instrucciones vigentes 1.2.1, dataset 1.5.0
-pnpm evals -- --instrucciones 1.1.0          # versión anterior, mismo dataset (para Compare)
-```
-
-- Ambos usan una base **temporal** propia (un esquema `evals_*` en `DATABASE_URL`, que se borra al terminar): no tocan asistentes, interruptores, cola ni gasto reales. Sus trazas llevan `origen: eval` y el panel no las cuenta.
-- Si R04 falla por falta de build de Next en el contenedor, repite con `--ruta proceso`.
-- **Veredicto esperado:** puede salir `failed`. La última corrida de producción del 2026-09-25 dio 32/40 con un solo gate en rojo (`gate_bloqueo`, por el tope del clasificador de alcance, que luego subió de 3 s a 5 s); el resultado vigente está en `.claude/sessions/ITERACION-EVALS.md`. **La demo muestra el veredicto tal como salga, aunque sea `failed`** (PRD §11). No es un bloqueo para desplegar ni para `v1-estable`. No ajustes instrucciones, umbrales ni guardrails para que pase. Reporta el resumen de consola a Raúl.
-- Solo la corrida final de cada paso va a producción: no repitas corridas para «mejorar» el número.
-- Verifica en Studio → **Datasets** → `charla-v1` → **Experiments** que aparezcan tus corridas; marca dos y usa **Compare**. Las cinco corridas de la iteración del 2026-09-25 (27/40 → 28 → 32 → 32 → 35) **no** están ahí: se hicieron en la máquina de Raúl y se importan con §6.1 a un dataset aparte. Guion de la demo en `.claude/sessions/T13.md` («Guion para la demo»).
-
-### 6.1 Importar los experimentos de la iteración 2026-09-25
-
-Los cinco experimentos de la iteración se crearon con `pnpm evals` en local (cuando Mastra aún usaba `data/mastra.db`), no en la base del servidor. El repo trae un paquete con ellos (`evals/experimentos/iteracion-2026-09-25.json`, sin datos personales: solo casos y perfiles inventados de los evals). Se importan como un dataset **nuevo**, «charla-v1 · iteración 2026-09-25» (id `charla-v1-iteracion-2026-09-25`), así que el `charla-v1` del servidor y sus experimentos no se tocan ni se mezclan.
-
-Desde cualquier lugar con `DATABASE_URL` de la base de producción (contenedor `studio` o `web`, o local con el proxy de Cloud SQL). **Antes de `--si`, un backup:** `gcloud sql backups create --instance=<instancia>`.
+Recrear un servicio desde cero, solo si se borró. Los valores son los de §1 y §2:
 
 ```bash
-pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json        # simulación: no escribe nada
-pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json --si   # aplica
+gcloud run deploy charla-web --image=$I --region=us-east1 --project=eng-particle-514416-q3 \
+  --service-account=charla-run@eng-particle-514416-q3.iam.gserviceaccount.com \
+  --add-cloudsql-instances=eng-particle-514416-q3:us-east1:charla-db \
+  --args=web --port=8080 --cpu=2 --memory=2Gi --no-cpu-throttling \
+  --min-instances=1 --max-instances=6 --concurrency=25 --allow-unauthenticated \
+  --set-env-vars=GOOGLE_VERTEX_PROJECT=eng-particle-514416-q3,GOOGLE_VERTEX_LOCATION=global,MAX_MENSAJES_ASISTENTE=15,PRESUPUESTO_MAX_USD=120,NEXT_PUBLIC_GOOGLE_CLIENT_ID=<id>,STUDIO_URL=<url-studio> \
+  --set-secrets=DATABASE_URL=database-url:latest,OPENAI_API_KEY=openai-api-key:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest,TYPESAFE_API_KEY=typesafe-api-key:latest,PANEL_PASSWORD=panel-password:latest,SESSION_SECRET=session-secret:latest
 ```
-
-- **Simulación esperada:** «El dataset no existe en el destino: se crea.» y, por tabla, nuevas = paquete y **conflictos 0**: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200.
-- **Con `--si`:** inserta todo en una sola transacción (o entra todo o nada). Al final muestra «En el destino ahora: datasets 1, versiones 43, items 43, experimentos 5, resultados 200, puntajes 1200, datasetsTotales 2» (o más, si hay otros datasets).
-- Es **idempotente**: repetirlo no duplica nada (todas las «Filas insertadas» en 0).
-- Si la simulación muestra **conflictos mayores que 0**, no apliques (el script igual se niega) y avisa a Raúl: significa que esos ids ya existen en otro dataset del servidor.
-- **Verificar en Studio:** Datasets → «charla-v1 · iteración 2026-09-25» → **Experiments**: 5 corridas (de «charla-v1.4.0 · instrucciones 1.1.0 · 2026-09-25 13:02» a «charla-v1.5.0 · instrucciones 1.2.1 · 2026-09-25 14:32»). Marca dos (por ejemplo, la primera y la última) y usa **Compare**: 40 casos con sus puntajes. Studio lee la base en cada consulta: basta con recargar la página. Reinicia el servicio `studio` solo si aun así no aparecen.
-- Las trazas de esos experimentos no viajan en el paquete (estaban en Neon): si un caso no abre su traza, es por eso y no afecta a los puntajes.
-- **Deshacer** (solo si Raúl lo pide): restaura el backup de Cloud SQL hecho antes de `--si`.
 
 ---
 
-## 7. Prueba de carga
+## 4. Trabajar con la base desde tu computadora
 
-Dentro del contenedor `web` (todo sale de una IP; 30 asistentes quedan bajo el límite de 60 identificaciones/min):
+Los scripts (`importar:*`, `reiniciar:charla`, `carga`, `purgar:personales`, `evals`) corren en local contra Cloud SQL a través del proxy oficial.
+
+1. Abre el túnel y déjalo abierto en otra terminal:
+   ```bash
+   cloud-sql-proxy --gcloud-auth --port 54329 eng-particle-514416-q3:us-east1:charla-db
+   ```
+2. En la terminal de trabajo, carga la URL de la base y la clave de sesión **sin imprimirlas**:
+   ```bash
+   U=$(gcloud secrets versions access latest --secret=database-url --project=eng-particle-514416-q3)
+   export DATABASE_URL=$(printf '%s' "$U" | sed -E 's#@/charla\?host=.*$#@127.0.0.1:54329/charla#')
+   export SESSION_SECRET=$(gcloud secrets versions access latest --secret=session-secret --project=eng-particle-514416-q3)
+   ```
+3. Antes de cualquier cambio de datos que no se pueda deshacer, haz un respaldo:
+   ```bash
+   gcloud sql backups create --instance=charla-db --project=eng-particle-514416-q3
+   ```
+
+**Láminas.** Las presentaciones están en la raíz del repo:
 
 ```bash
-pnpm carga --url http://localhost:3000 --limpiar
+pnpm importar:laminas agentes-produccion-espol-60min.html     # esperado: 26 láminas
 ```
 
-Crea 30 asistentes `carga+N@carga.example.com`, 3 preguntas cada uno en paralelo, reporta primer token p50/p95, duración p95 y errores, y **borra los asistentes de prueba** al final. Meta: primer token p95 < 3 s y 0 errores 5xx (sale con código 1 si no se cumple; reporta los números igual). Si se corre desde fuera (`--url https://<dominio-app>`), luego limpia dentro de `web` con `pnpm carga --solo-limpiar`.
+Importar agrega o actualiza láminas, pero **no borra** las que sobran. Si la presentación nueva tiene menos láminas, borra primero las sobrantes (`DELETE FROM laminas WHERE numero > N`) y luego importa.
 
-Después de la carga, en `/panel` los mensajes de carga cuentan en las métricas de la última hora; es normal.
+**Inscritos.** El `.xlsx` real nunca va al repo. Impórtalo desde tu computadora y después bórralo:
 
----
+```bash
+pnpm importar:inscritos <archivo.xlsx>
+```
 
-## 8. Versión estable y rollback
-
-1. Si todo lo anterior funciona (app, Studio, importación y carga), marca el despliegue actual como estable. **No depende del veredicto de los evals**: un `failed` se reporta y se muestra en la demo, pero no impide etiquetar (decisión de Raúl, 2026-09-25): crea el tag git `v1-estable` en el commit desplegado (`git tag v1-estable <sha> && git push origin v1-estable`) y anota el ID del despliegue en Dokploy.
-2. **Prueba el rollback una vez:** en Dokploy → `web` → Deployments, vuelve al despliegue estable (o redespliega apuntando al tag `v1-estable`) y confirma que la app responde y los datos siguen (el volumen no se toca).
-3. Reinicia `web` una vez y confirma que conversaciones, trazas y escalamientos se conservan.
+**Poner el panel en cero antes de la charla:** `pnpm reiniciar:charla` simula y muestra qué borraría; `pnpm reiniciar:charla --si` lo aplica. Detalle en `REINICIO-CHARLA.md`.
 
 ---
 
-## 9. Verificación final y reporte a Raúl
+## 5. Cambiar a la presentación del DevFest
 
-- [ ] App carga en un teléfono con datos móviles (no Wi-Fi) en < 2 s.
-- [ ] Android: aparece «Instalar app» y se instala. iPhone (Safari): aparece la indicación «Agregar a inicio» y la app abre a pantalla completa (puede pedir el email otra vez: es normal).
-- [ ] El teclado del teléfono no tapa el cuadro de texto del chat.
-- [ ] Studio solo con contraseña.
-- [ ] 40 láminas (con notas) y 25 inscritos importados; el xlsx borrado del volumen.
-- [ ] Experimentos de la iteración 2026-09-25 importados (§6.1) y visibles en Studio con Compare; veredicto reportado aunque sea `failed`.
-- [ ] Prueba de carga: números reportados, asistentes de prueba borrados.
-- [ ] `v1-estable` etiquetado y rollback probado.
+Después de ESPOL (2026-11-25) y antes del 2026-12-05:
 
-Reporta a Raúl: URLs, resultados de evals (tabla por categoría y veredicto de cada versión), números de la carga, y cualquier desvío.
+1. Construye con `_PRESENTACION=devfest` y publica en ambos servicios (§3).
+2. Con el túnel abierto (§4), haz un respaldo, borra la lámina 26 de ESPOL (`DELETE FROM laminas WHERE numero > 25`) e importa:
+   ```bash
+   pnpm importar:laminas agentes-produccion-devfest-60min.html   # esperado: 25 láminas
+   ```
+3. En el panel, elige «Conceptos» y comprueba que las preguntas sugeridas son las del DevFest.
+4. Ajusta los números de lámina del dataset de evals (`evals/`) a esta presentación antes de correr evals.
+
+---
+
+## 6. Evals
+
+Corren en local con el túnel abierto (§4). Cada corrida tarda unos 3 a 4 minutos y cuesta unos USD 0.20.
+
+```bash
+pnpm evals
+```
+
+- Usan un esquema temporal propio (`evals_*`) dentro de la misma base, que se borra al terminar: no tocan asistentes, interruptores ni el gasto real. Sus trazas llevan `origen: eval` y el panel no las cuenta.
+- **La demo muestra el veredicto tal como salga, aunque sea `failed`** (PRD §11). No ajustes instrucciones, umbrales ni guardrails para que pase.
+- En Studio → Datasets → `charla-v1` → Experiments aparecen las corridas. Marca dos y usa Compare.
+- Experimentos de la iteración del 2026-09-25: `pnpm importar:experimentos evals/experimentos/iteracion-2026-09-25.json` simula, y `--si` aplica (con respaldo previo). Si la simulación muestra conflictos mayores que 0, no apliques.
+
+---
+
+## 7. Prueba de carga y escala
+
+Resultados del 2026-11-12 (detalle en `odd/tasks/google-cloud-todo.md`, entradas L6 a L10):
+
+- **Sin IA** (interruptor `kill_switch` encendido, el chat responde «mantenimiento»): 1000 personas a la vez → 0 errores con hasta 3 o más copias. Con una sola copia, Google rechazaba entre el 10 y el 30 % de los pedidos en picos de 300 o más.
+- **Con IA**, 100 preguntas en el mismo segundo: primer texto p50 10 s y p95 32 s; respuesta completa p95 38 s; 0 cortes por tiempo. Una pregunta sola tarda unos 4 s. La espera bajo carga es de Gemini (capacidad compartida de Google), no de la app ni de la base.
+
+Cómo repetirla con el túnel abierto (§4). Cada 100 preguntas con IA cuestan unos USD 0.50:
+
+```bash
+pnpm carga --url https://charla.codetrain.cloud --asistentes 100 --preguntas 1 --limpiar
+```
+
+El script crea las sesiones directo en la base. Con más de unas 100 personas, tu computadora no alcanza a crearlas todas a la vez; prepara las sesiones por grupos antes de medir. Después de la prueba, `pnpm reiniciar:charla --si` deja el panel en cero.
+
+---
+
+## 8. Volver a una versión anterior
+
+Cada publicación crea una revisión. Para volver a una anterior sin construir nada:
+
+```bash
+gcloud run revisions list --service=charla-web --region=us-east1 --project=eng-particle-514416-q3
+gcloud run services update-traffic charla-web --to-revisions=<revision>=100 --region=us-east1 --project=eng-particle-514416-q3
+```
+
+Haz lo mismo con `charla-studio` si hace falta. Los datos viven en Cloud SQL, así que no se pierden al cambiar de revisión. Para recuperar datos, restaura un respaldo de Cloud SQL (consola → SQL → `charla-db` → Respaldos).
+
+---
+
+## 9. Apagar todo después del DevFest
+
+Hoy cuesta unos USD 70 al mes, sobre todo Cloud SQL y la copia mínima de `charla-web`. Después del 2026-12-05:
+
+1. `pnpm purgar:personales` con el túnel abierto, para cumplir la política de privacidad (nombres y correos fuera en ≤ 30 días).
+2. Exporta lo que quieras conservar (trazas o experimentos) y haz un respaldo final.
+3. Baja los servicios a cero copias o bórralos:
+   ```bash
+   gcloud run services update charla-web --min-instances=0 --region=us-east1 --project=eng-particle-514416-q3
+   ```
+4. Detén la base (deja de cobrar CPU, pero sigue cobrando el disco) o bórrala:
+   ```bash
+   gcloud sql instances patch charla-db --activation-policy=NEVER --project=eng-particle-514416-q3
+   ```
 
 ---
 
 ## 10. Lo que NO hay que hacer
 
-- No subir `.env`, el xlsx ni ningún dato personal al repo.
-- No escalar a más de 1 réplica.
-- No borrar el volumen `agente-charla-data` (contiene inscritos, conversaciones, votos y la memoria del agente).
-- No correr `pnpm purgar:personales` hasta después de la charla (borra datos personales de asistentes). Para dejar los paneles en cero antes de la charla usa `pnpm reiniciar:charla` (ver `REINICIO-CHARLA.md`).
+- No subir `.env`, el `.xlsx` de inscritos ni ningún dato personal al repo.
+- No subir el máximo de copias de `charla-web` por encima de 6 sin revisar las conexiones de la base (§1).
+- No conectarse a la base de producción para pruebas automáticas: los tests usan PGlite y las sondas usan un Postgres local.
+- No correr `pnpm purgar:personales` antes de la charla. Para dejar el panel en cero usa `pnpm reiniciar:charla`.
 - No cambiar instrucciones, umbrales ni guardrails para que los evals pasen.
+- No activar el proxy de Cloudflare (nube naranja) en `charla.codetrain.cloud`: rompe el certificado de Google.

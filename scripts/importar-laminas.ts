@@ -105,7 +105,7 @@ async function principal() {
       notas: l.notas?.length ?? 0,
     })),
   );
-  console.log(`Láminas importadas: ${laminas.length}. Índice de búsqueda reconstruido.`);
+  console.log(`Láminas importadas: ${laminas.length}. La búsqueda se actualiza sola.`);
 }
 
 ejecutarCli(import.meta.url, principal, "No se pudieron importar las láminas");
