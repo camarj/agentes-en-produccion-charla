@@ -6,7 +6,15 @@ import { APICallError } from "ai";
 // ese intento y se lanza un 408 reintentable: la cadena nativa de Mastra
 // (modelosConRespaldo) reintenta el principal 1 vez y luego pasa al respaldo.
 // Solo mide hasta el PRIMER contenido: una respuesta larga que ya empezó nunca se corta.
-export const ESPERA_PRIMER_TROZO_MS = 8_000;
+// 15 s: con 8 s, en la prueba de 100 preguntas a la vez el 39 % pasó al
+// respaldo (más lento) porque Gemini bajo carga suele tardar 8-15 s; 15 s solo
+// atrapa los silencios largos. Ajustable sin publicar con ESPERA_PRIMER_TROZO_MS.
+export const ESPERA_PRIMER_TROZO_MS = 15_000;
+
+export function esperaPrimerTrozoMs(entorno: Record<string, string | undefined> = process.env): number {
+  const valor = Number(entorno.ESPERA_PRIMER_TROZO_MS);
+  return Number.isInteger(valor) && valor >= 1_000 ? valor : ESPERA_PRIMER_TROZO_MS;
+}
 
 // Partes del stream que no son contenido: llegan antes de que el modelo responda.
 const SIN_CONTENIDO = new Set(["stream-start", "response-metadata", "raw"]);
@@ -34,7 +42,7 @@ export function esModeloConLimite(modelo: unknown): boolean {
 
 // Envuelve un modelo del AI SDK (cualquier versión de la especificación) sin
 // cambiar su identidad: proveedor, id y demás propiedades pasan tal cual.
-export function conLimitePrimerTrozo<M extends ModeloConStream>(modelo: M, ms: number = ESPERA_PRIMER_TROZO_MS): M {
+export function conLimitePrimerTrozo<M extends ModeloConStream>(modelo: M, ms: number = esperaPrimerTrozoMs()): M {
   return new Proxy(modelo, {
     get(objetivo, clave) {
       if (clave === LIMITADO) return true;

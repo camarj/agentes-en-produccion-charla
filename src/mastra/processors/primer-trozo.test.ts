@@ -2,7 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
-import { conLimitePrimerTrozo, esModeloConLimite } from "./primer-trozo";
+import { conLimitePrimerTrozo, ESPERA_PRIMER_TROZO_MS, esModeloConLimite, esperaPrimerTrozoMs } from "./primer-trozo";
 import { modeloFalso } from "./pruebas-modelo";
 
 type Parte = Record<string, unknown>;
@@ -108,6 +108,18 @@ describe("conLimitePrimerTrozo", () => {
     expect(limitado.modelId).toBe("gemini-3.8-flash");
     expect(esModeloConLimite(limitado)).toBe(true);
     expect(esModeloConLimite(lento.modelo)).toBe(false);
+  });
+});
+
+describe("esperaPrimerTrozoMs", () => {
+  it("usa 15 s por defecto y acepta un valor válido de ESPERA_PRIMER_TROZO_MS", () => {
+    expect(ESPERA_PRIMER_TROZO_MS).toBe(15_000);
+    expect(esperaPrimerTrozoMs({})).toBe(15_000);
+    expect(esperaPrimerTrozoMs({ ESPERA_PRIMER_TROZO_MS: "12000" })).toBe(12_000);
+  });
+
+  it("ignora valores inválidos o menores a 1 s", () => {
+    for (const v of ["", "abc", "500", "-3", "1.5"]) expect(esperaPrimerTrozoMs({ ESPERA_PRIMER_TROZO_MS: v })).toBe(15_000);
   });
 });
 
