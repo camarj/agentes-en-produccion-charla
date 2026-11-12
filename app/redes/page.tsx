@@ -13,6 +13,7 @@ const REDES: { red: string; usuario: string; href: string }[] = [
   { red: "LinkedIn", usuario: "in/rauljcamacho", href: "https://www.linkedin.com/in/rauljcamacho" },
   { red: "Instagram", usuario: "@raulj.camacho", href: "https://www.instagram.com/raulj.camacho/" },
   { red: "X", usuario: "@rauljcamacho", href: "https://x.com/rauljcamacho" },
+  { red: "GitHub", usuario: "@camarj", href: "https://github.com/camarj" },
   { red: "Blog", usuario: "rauljcamacho.online", href: "https://rauljcamacho.online" },
 ];
 
@@ -26,33 +27,52 @@ export default function PaginaRedes() {
         width={372}
         height={124}
         priority
-        className="mb-8 h-9 w-auto self-start"
+        className="mb-6 h-8 w-auto self-start"
       />
-      <p className="font-mono text-sm text-muted-foreground">Charla · Inteliside</p>
-      <h1 className="mt-2 text-[28px] leading-tight font-semibold sm:text-[32px]">Raúl Camacho</h1>
-      <p className="mt-1 text-muted-foreground">CEO de Inteliside</p>
 
-      <ul className="mt-8 space-y-3">
+      {/* Retrato en blanco y negro sobre negro, como en la diapositiva de presentación del speaker. */}
+      <figure>
+        <div className="relative aspect-[16/11] w-full overflow-hidden">
+          <Image
+            src="/raul-camacho.jpg"
+            alt="Retrato de Raúl Camacho"
+            fill
+            priority
+            sizes="(max-width: 420px) 100vw, 380px"
+            className="object-cover object-[50%_27%] contrast-[1.2]"
+          />
+        </div>
+        <figcaption className="mt-3 font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase">
+          Infraestructura · IA · Software
+        </figcaption>
+      </figure>
+
+      <h1 className="mt-7 text-[40px] leading-none font-semibold tracking-tight">Raúl Camacho</h1>
+      <p className="mt-2 text-muted-foreground">CEO de Inteliside</p>
+
+      <ul className="mt-7 border-b border-border">
         {REDES.map(({ red, usuario, href }) => (
-          <li key={red}>
+          <li key={red} className="border-t border-border">
             <a
               href={href}
               target="_blank"
               aria-label={`${red} · ${usuario} (se abre en una pestaña nueva)`}
               rel="noopener noreferrer"
-              className="flex min-h-14 items-center justify-between gap-4 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-primary focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="group flex min-h-[52px] items-center justify-between gap-4 py-3 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-              <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{red}</span>
+              <span className="font-medium transition-colors group-hover:text-primary">{red}</span>
+              <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-mono text-sm text-muted-foreground">{usuario}</span>
+                <ArrowUpRight aria-hidden className="size-4 shrink-0 text-primary" />
               </span>
-              <ArrowUpRight aria-hidden className="size-5 shrink-0 text-primary" />
             </a>
           </li>
         ))}
       </ul>
 
-      <p className="mt-10 font-mono text-xs text-muted-foreground">Cómo lograr que tus agentes sobrevivan a producción</p>
+      <p className="mt-8 font-mono text-xs leading-relaxed text-muted-foreground">
+        Cómo lograr que tu agente de IA sobreviva en producción
+      </p>
     </main>
   );
 }
