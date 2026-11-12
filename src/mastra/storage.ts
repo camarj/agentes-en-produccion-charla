@@ -12,7 +12,7 @@ export const ESQUEMA_MASTRA = "mastra";
 // app, lib/db/client.ts, que usa hasta 10). Lo comparten la memoria y la
 // observabilidad. Cuentan web y Studio: cada proceso suma 10 + 10. Con 4, la
 // prueba de carga con IA (100 preguntas a la vez, 2026-11-12) hacía fila para
-// guardar la memoria (p95 17,6 s). Cloud SQL admite 100: 3 copias de web + Studio = 80.
+// guardar la memoria (p95 17,6 s). Cloud SQL admite 200 (flag max_connections): 6 copias de web + Studio = 140.
 export const MAX_CONEXIONES_MASTRA = 10;
 
 type Entorno = { DATABASE_URL?: string; MASTRA_ESQUEMA?: string; [clave: string]: string | undefined };
