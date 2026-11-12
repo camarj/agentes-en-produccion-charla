@@ -11,11 +11,13 @@ import {
   OPCIONES_PROVEEDOR_PRINCIPAL,
   OPCIONES_PROVEEDOR_RESPALDO,
 } from "../modelos";
+import { conLimitePrimerTrozo } from "./primer-trozo";
 
 // Cadena de modelos del agente (fallback nativo de Mastra). Ante un error del
 // proveedor, Mastra reintenta el mismo modelo `maxRetries` veces (solo si el
 // error es reintentable: 5xx, 529, 408, 409, 429 o de red) y luego pasa al
-// siguiente modelo. Principal (Gemini en Vertex): 1 reintento; respaldo (OpenAI): 1 intento.
+// siguiente modelo. Principal (Gemini en Vertex): 1 reintento, y también si no
+// empieza a responder a tiempo (primer-trozo.ts); respaldo (OpenAI): 1 intento.
 export function modelosConRespaldo(): ModelWithRetries[] {
   return [
     {
@@ -25,7 +27,9 @@ export function modelosConRespaldo(): ModelWithRetries[] {
       // El cast salva la diferencia de versión de @ai-sdk/provider entre
       // @ai-sdk/google-vertex y @mastra/core (misma interfaz LanguageModelV4 en
       // ejecución; lo prueba el test HTTP de este archivo).
-      model: (() => modeloPrincipal()) as unknown as ModelWithRetries["model"],
+      // Con plan B por tiempo: si no hay contenido en ESPERA_PRIMER_TROZO_MS,
+      // se corta (408 reintentable), se reintenta 1 vez y luego responde el respaldo.
+      model: (() => conLimitePrimerTrozo(modeloPrincipal())) as unknown as ModelWithRetries["model"],
       maxRetries: 1,
       providerOptions: { vertex: { thinkingConfig: { ...OPCIONES_PROVEEDOR_PRINCIPAL.vertex.thinkingConfig } } },
     },

@@ -13,6 +13,7 @@ import {
   modelosConRespaldo,
 } from "./fallback-modelo";
 import { modeloFalso } from "./pruebas-modelo";
+import { esModeloConLimite } from "./primer-trozo";
 
 function interruptores(modelo_caido: string, modelos_caidos = "off", limite_gemini = "off") {
   return { obtenerTodos: vi.fn().mockResolvedValue({ modelo_caido, modelos_caidos, limite_gemini }) };
@@ -132,6 +133,8 @@ describe("modelosConRespaldo", () => {
     const modelo = (principal.model as unknown as () => { provider: string; modelId: string })();
     expect(modelo.provider).toMatch(/^google\.vertex/);
     expect(modelo.modelId).toBe("gemini-3.8-flash");
+    // Plan B por tiempo: si Gemini no empieza a responder, se corta y pasa al reintento/respaldo.
+    expect(esModeloConLimite(modelo)).toBe(true);
     expect(respaldo).toEqual({
       id: "respaldo",
       model: MODELO_RESPALDO,
