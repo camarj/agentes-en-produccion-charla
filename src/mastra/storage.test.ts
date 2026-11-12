@@ -109,7 +109,9 @@ describe("crearPoolMastra", () => {
   it("usa un pool pequeño (Cloud SQL limita las conexiones) y no se cae si una conexión inactiva muere", async () => {
     const errores = vi.spyOn(console, "error").mockImplementation(() => {});
     const pool = crearPoolMastra(URL_FALSA);
-    expect(MAX_CONEXIONES_MASTRA).toBeLessThanOrEqual(5);
+    // Cloud SQL (db-custom-1-3840) admite 100 conexiones: hasta 3 copias de
+    // web + Studio, cada una con 10 de la app + las de Mastra, deben caber con margen.
+    expect(4 * (10 + MAX_CONEXIONES_MASTRA)).toBeLessThanOrEqual(85);
     expect(pool.options.max).toBe(MAX_CONEXIONES_MASTRA);
     expect(pool.options.connectionTimeoutMillis).toBeGreaterThan(0);
 

@@ -135,6 +135,13 @@ describe("traza real en storage (modelo falso)", () => {
     expect(traza.spans.some((s) => s.spanType === "tool_call" && s.name.includes("buscar_laminas"))).toBe(true);
   });
 
+  it("no guarda un span por cada trozo del stream (model_chunk), pero sí la generación completa", async () => {
+    const obs = await mastra.getStorage()!.getStore("observability");
+    const traza = await obs!.getTrace({ traceId });
+    expect(traza!.spans.some((s) => s.spanType === "model_generation")).toBe(true);
+    expect(traza!.spans.filter((s) => s.spanType === "model_chunk")).toEqual([]);
+  });
+
   it("los puntajes quedan guardados: fidelidad < 0,5 por la cifra inventada", async () => {
     const scores = await mastra.getStorage()!.getStore("scores");
     const leer = async (scorerId: string) =>
