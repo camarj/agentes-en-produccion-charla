@@ -28,6 +28,17 @@ describe("laminas", () => {
     expect(a[0].fragmento).toContain("respaldo");
   });
 
+  // Verificación independiente 2026-11-12 (B1): con el diccionario `spanish` y
+  // las tildes quitadas antes, «especificación» y «especificaciones» quedaban
+  // con raíces distintas y la búsqueda no encontraba la lámina. Como FTS5, se
+  // compara sin raíces y con prefijos.
+  it("singular y plural, con o sin tilde, encuentran la misma lámina", async () => {
+    await repo.upsert({ numero: 13, titulo: "Del PRD al comportamiento", contenido: "Especificaciones y criterios de aceptación", notas: null });
+    await repo.upsert({ numero: 22, titulo: "Evaluaciones · Evals", contenido: "¿Lo hizo bien? Criterios del PRD", notas: null });
+    for (const q of ["especificación", "especificacion", "especificaciones"]) expect((await repo.buscar(q))[0]?.lamina).toBe(13);
+    for (const q of ["evaluación", "evaluacion", "evaluaciones"]) expect((await repo.buscar(q))[0]?.lamina).toBe(22);
+  });
+
   it("notas es null cuando la lámina no tiene notas", async () => {
     const r = await repo.buscar("guardrails");
     expect(r[0]).toMatchObject({ lamina: 9, notas: null });
@@ -84,15 +95,24 @@ describe("laminas · texto completo en Postgres", () => {
     expect((await numeros("agente"))[0]).toBe(4);
   });
 
-  it("guarda el tsvector en una columna generada con índice GIN", async () => {
+  it("guarda palabras (documento) y raíces (raices) en columnas generadas, cada una con índice GIN", async () => {
     const col = await db.cliente.execute(
-      "SELECT is_generated FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'laminas' AND column_name = 'documento'",
+      "SELECT column_name, is_generated FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'laminas' AND column_name IN ('documento', 'raices') ORDER BY column_name",
     );
-    expect(col.rows[0]?.is_generated).toBe("ALWAYS");
+    expect(col.rows).toEqual([
+      { column_name: "documento", is_generated: "ALWAYS" },
+      { column_name: "raices", is_generated: "ALWAYS" },
+    ]);
     const idx = await db.cliente.execute(
-      "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'laminas' AND indexdef ILIKE '%USING gin%'",
+      "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'laminas' AND indexdef ILIKE '%USING gin%' ORDER BY indexname",
     );
-    expect(idx.rows).toHaveLength(1);
+    expect(idx.rows.map((r) => r.indexname)).toEqual(["laminas_documento_idx", "laminas_raices_idx"]);
+  });
+
+  it("las raíces no cambian los primeros intentos: «patron» exacto no encuentra «patrones»", async () => {
+    await repo.upsert({ numero: 15, titulo: "Patrones", contenido: "Formas que se repiten", notas: null });
+    await repo.upsert({ numero: 16, titulo: "Un patrón", contenido: "ReAct", notas: null });
+    expect((await repo.buscar("patron")).map((r) => r.lamina)).toEqual([16]);
   });
 });
 

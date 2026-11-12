@@ -37,10 +37,14 @@ export function crearSesiones(fuente: FuenteDb = db) {
 
   // Al entrar (identificar): revoca las sesiones activas del asistente y crea
   // una nueva que hereda su hilo. Así solo un dispositivo queda conectado.
+  // El cerrojo consultivo por asistente pone en fila dos entradas simultáneas
+  // (doble toque, reintento, varias copias de la app): sin él, en READ
+  // COMMITTED ambas revocaban lo confirmado y quedaban dos sesiones activas.
   async function reemplazar(asistenteId: string): Promise<Sesion> {
     const c = await fuente();
-    const [, creada] = await c.batch(
+    const [, , creada] = await c.batch(
       [
+        { sql: "SELECT pg_advisory_xact_lock(1, hashtext(?))", args: [asistenteId] },
         {
           sql: "UPDATE sesiones SET revocada_en = ahora_utc() WHERE asistente_id = ? AND revocada_en IS NULL",
           args: [asistenteId],

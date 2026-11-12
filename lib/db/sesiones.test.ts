@@ -1,7 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { crearAsistentes } from "./asistentes";
 import { crearDbTemporal } from "./prueba";
+import type { Cliente, Sentencia } from "./client";
 import { crearSesiones } from "./sesiones";
+
+describe("sesiones.reemplazar: cerrojo por asistente", () => {
+  // Verificación independiente 2026-11-12 (B2): en Postgres (READ COMMITTED)
+  // revocar + insertar no basta entre copias simultáneas; el cerrojo consultivo
+  // por asistente va primero en la transacción, como en escalamientos.
+  it("toma pg_advisory_xact_lock(1, hashtext(asistente)) antes de revocar e insertar", async () => {
+    const vistos: Sentencia[][] = [];
+    const falso = {
+      execute: async () => ({ rows: [], rowsAffected: 0 }),
+      batch: async (s: Sentencia[]) => {
+        vistos.push(s);
+        return s.map(() => ({ rows: [{ token: "t", asistente_id: "a", thread_id: "h", mensajes: 0, creada_en: "2026-11-12 00:00:00", revocada_en: null }], rowsAffected: 1 }));
+      },
+      close: async () => {},
+    } as unknown as Cliente;
+    await crearSesiones(async () => falso).reemplazar("asistente-1");
+    const [lote] = vistos;
+    expect(lote[0]).toEqual({ sql: "SELECT pg_advisory_xact_lock(1, hashtext(?))", args: ["asistente-1"] });
+    expect(typeof lote[1] === "string" ? lote[1] : lote[1].sql).toMatch(/^UPDATE sesiones SET revocada_en/);
+    expect(typeof lote[2] === "string" ? lote[2] : lote[2].sql).toMatch(/INSERT INTO sesiones/);
+  });
+});
 
 describe("sesiones", () => {
   let db: Awaited<ReturnType<typeof crearDbTemporal>>;
