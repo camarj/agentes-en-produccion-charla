@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { RequestContext } from "@mastra/core/request-context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AlcanceCharla,
@@ -11,6 +12,7 @@ import {
   type Clasificacion,
   type Clasificador,
 } from "./alcance-charla";
+import { crearSenales } from "@/lib/salud/senales";
 import { MODELO_LIGERO, MODELO_LIGERO_RESPALDO } from "../modelos";
 import { MENSAJE_SALUD, MENSAJES_BLOQUEO } from "./mensajes";
 import { modeloFalso } from "./pruebas-modelo";
@@ -132,6 +134,15 @@ describe("AlcanceCharla (unidad)", () => {
     expect(abort).not.toHaveBeenCalled();
     expect(span.update).toHaveBeenCalledWith({ metadata: { alcance_falla_abierta: true, alcance_error: "error" } });
     expect(JSON.stringify(span.update.mock.calls)).not.toContain("ana@ejemplo.com");
+  });
+
+  it("la falla abierta queda en las señales del turno para el semáforo de guardrails", async () => {
+    const p = new AlcanceCharla({ clasificar: vi.fn(async () => Promise.reject(new Error("529 Overloaded"))) });
+    const { args } = contexto([mensaje("user", "¿Qué es MCP?")]);
+    const rc = new RequestContext();
+    const senales = crearSenales(rc);
+    await p.processInput({ ...(args as object), requestContext: rc } as never);
+    expect(senales).toEqual({ alcanceFallaAbierta: true });
   });
 
   it("falla abierta si la salida no cumple el esquema", async () => {

@@ -19,7 +19,7 @@ export interface VotosDeTraza {
   traceId: string;
   positivos: number;
   negativos: number;
-  // Momento del voto más reciente de la traza (texto `datetime('now')` de SQLite, UTC).
+  // Momento del voto más reciente de la traza (texto `ahora_utc()`, UTC: «AAAA-MM-DD HH:MM:SS»).
   ultimoEn: string;
 }
 
@@ -30,7 +30,7 @@ export function crearFeedback(fuente: FuenteDb = db) {
     await c.execute({
       sql: `INSERT INTO feedback (asistente_id, trace_id, valor) VALUES (?, ?, ?)
         ON CONFLICT (asistente_id, trace_id)
-        DO UPDATE SET valor = excluded.valor, creado_en = datetime('now')`,
+        DO UPDATE SET valor = excluded.valor, creado_en = ahora_utc()`,
       args: [voto.asistenteId, voto.traceId, voto.valor],
     });
   }
@@ -38,7 +38,7 @@ export function crearFeedback(fuente: FuenteDb = db) {
   async function totales(): Promise<TotalesVotos> {
     const c = await fuente();
     const r = await c.execute(
-      `SELECT COALESCE(SUM(valor = 1), 0) AS positivos, COALESCE(SUM(valor = -1), 0) AS negativos,
+      `SELECT COUNT(*) FILTER (WHERE valor = 1) AS positivos, COUNT(*) FILTER (WHERE valor = -1) AS negativos,
         COUNT(*) AS total FROM feedback`,
     );
     const f = r.rows[0];
@@ -49,7 +49,7 @@ export function crearFeedback(fuente: FuenteDb = db) {
   async function porTrace(limite = 100): Promise<VotosDeTraza[]> {
     const c = await fuente();
     const r = await c.execute({
-      sql: `SELECT trace_id, SUM(valor = 1) AS positivos, SUM(valor = -1) AS negativos,
+      sql: `SELECT trace_id, COUNT(*) FILTER (WHERE valor = 1) AS positivos, COUNT(*) FILTER (WHERE valor = -1) AS negativos,
           MAX(creado_en) AS ultimo_en, MAX(id) AS ultimo_id
         FROM feedback GROUP BY trace_id ORDER BY ultimo_en DESC, ultimo_id DESC LIMIT ?`,
       args: [limite],

@@ -82,8 +82,8 @@ export function extraerLaminas(html: string): Lamina[] {
 
 export async function importarLaminas(fuente: FuenteDb, laminas: Lamina[]): Promise<void> {
   const repo = crearLaminas(fuente);
+  // La columna tsvector `documento` es generada: se indexa sola en cada upsert.
   for (const lamina of laminas) await repo.upsert(lamina);
-  await repo.reconstruirIndice();
 }
 
 async function principal() {
@@ -95,7 +95,7 @@ async function principal() {
   try {
     await importarLaminas(async () => cliente, laminas);
   } finally {
-    cliente.close();
+    await cliente.close();
   }
   console.table(
     laminas.map((l) => ({
@@ -105,7 +105,7 @@ async function principal() {
       notas: l.notas?.length ?? 0,
     })),
   );
-  console.log(`Láminas importadas: ${laminas.length}. Índice de búsqueda reconstruido.`);
+  console.log(`Láminas importadas: ${laminas.length}. La búsqueda se actualiza sola.`);
 }
 
 ejecutarCli(import.meta.url, principal, "No se pudieron importar las láminas");

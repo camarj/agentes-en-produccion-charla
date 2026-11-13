@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { anotarEvento } from "@/lib/salud/registro";
 import { z } from "zod";
 import { feedback as repoFeedback } from "@/lib/db/feedback";
 import { errorInterno, leerJson, noAutenticado, respuestaError } from "@/lib/respuestas";
@@ -28,6 +29,8 @@ function enviarAObservabilidad(traceId: string, valor: 1 | -1) {
       console.error("[feedback] no se pudo enviar a la observabilidad", {
         tipo: error instanceof Error ? error.name : typeof error,
       });
+      // Semáforo «Trazas / observabilidad» del panel (PRD §15 G7).
+      anotarEvento("traza_no_guardada", traceId);
     });
 }
 

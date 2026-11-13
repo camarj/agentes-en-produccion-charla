@@ -19,15 +19,15 @@ Agente de chat para los 25 asistentes de la charla (el speaker no cuenta: sus em
 | Capa | Tecnología |
 | --- | --- |
 | App | Next.js 16 (App Router), TypeScript estricto, Tailwind CSS, shadcn/ui |
-| Agente | Mastra (`@mastra/core`, `@mastra/memory`, `@mastra/libsql`, `@mastra/ai-sdk`) |
-| Evals y observabilidad | `@mastra/evals`, `@mastra/observability`, Mastra Studio autohospedado. Trazas y puntajes en Postgres (Neon) con `OBSERVABILIDAD_DATABASE_URL`; sin ella, `data/mastra.db` |
-| Modelos | Principal `openai/gpt-6-luna`; respaldo `anthropic/claude-sonnet-5`. Guardrails y jueces `openai/gpt-6-luna` (respaldo `anthropic/claude-haiku-4-5`). Constantes en `src/mastra/modelos.ts`. Decisión de Raúl (2026-09-23): prevalece sobre los modelos que citen las tareas. |
-| Datos | SQLite: `data/charla.db` (app, vía `@libsql/client`: inscritos, cola, votos, interruptores, Jev) y `data/mastra.db` (Mastra: memoria) |
-| Búsqueda | SQLite FTS5 (sin embeddings) |
+| Agente | Mastra (`@mastra/core`, `@mastra/memory`, `@mastra/pg`, `@mastra/ai-sdk`) |
+| Evals y observabilidad | `@mastra/evals`, `@mastra/observability`, Mastra Studio autohospedado. Memoria, trazas, puntajes y experimentos en Cloud SQL (esquema `mastra` de `DATABASE_URL`) |
+| Modelos | Principal Gemini `gemini-3.8-flash` en Vertex AI (`google-vertex/gemini-3.8-flash`); respaldo `openai/gpt-6-luna`. Guardrails y jueces `openai/gpt-6-luna` (respaldo `anthropic/claude-haiku-4-5`). Constantes en `src/mastra/modelos.ts`. Decisión de Raúl (2026-11-10, PRD §15 G5): prevalece sobre los modelos que citen las tareas. |
+| Datos | Cloud SQL para PostgreSQL (`DATABASE_URL`, vía `pg`): app en `public` (inscritos, cola, votos, interruptores, Jev) y Mastra en el esquema `mastra`. Tests sobre PGlite. Decisión de Raúl (2026-11-11): todo en Google, sin Neon |
+| Búsqueda | Full text de Postgres en español, sin acentos (sin embeddings) |
 | UI de chat | `useChat` de AI SDK UI + stream de Mastra convertido con `toAISdkStream`. App instalable (PWA) |
 | Dictado por voz | OpenAI `gpt-transcribe` (`src/mastra/voz.ts`, `app/api/transcribir`). Vapi queda para la fase 2 |
 | Análisis de la sala (Jev) | TypeSafe (`TYPESAFE_API_KEY`), pantalla `/panel/jev` |
-| Despliegue | Dokploy: una sola imagen para el servicio `web` y el servicio `studio`, volumen compartido `/app/data`. Ver `DEPLOY.md` |
+| Despliegue | Google Cloud Run: una sola imagen (Cloud Build) para `charla-web` y `charla-studio` (IAP). Presentación activa con `_PRESENTACION` (espol/devfest). Ver `DEPLOY.md` |
 | Gestor de paquetes | pnpm |
 
 ## Estructura
@@ -37,7 +37,7 @@ app/                 Next.js (page.tsx, panel/, api/)
 components/ui/       shadcn
 components/chat/     composer, mensajes, estados
 src/mastra/          index.ts, agents/, tools/, processors/, scorers/
-lib/db/              cliente SQLite, migraciones, repositorios
+lib/db/              cliente Postgres, migraciones, repositorios
 lib/session.ts       cookie de sesión firmada
 evals/               charla-v1.json + runner
 scripts/             importar-laminas, importar-inscritos, reiniciar-charla, purgar-personales, carga, generar-iconos
@@ -79,7 +79,7 @@ pnpm importar:laminas <html>
 pnpm importar:inscritos <csv|xlsx>
 pnpm reiniciar:charla    # panel y Jev en cero antes de la charla (--si para aplicar)
 pnpm purgar:personales   # después de la charla
-pnpm evals               # dataset charla-v1 1.5.0; sale con 1 si el veredicto no es passed
+pnpm evals               # dataset charla-v1 1.6.0; sale con 1 si el veredicto no es passed
 pnpm carga               # prueba de carga: 30 sesiones en paralelo
 pnpm iconos              # regenera los íconos de la PWA
 pnpm test                # vitest

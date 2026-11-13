@@ -57,8 +57,8 @@ describe("modelo en uso (tarjeta del panel)", () => {
   const apagados = { modelo_caido: "off", modelos_caidos: "off" } as const;
 
   it("el valor grande sale de los interruptores: el modelo que va a responder ahora", () => {
-    expect(modeloActual(apagados)).toEqual({ texto: "gpt-6-luna", estado: "principal" });
-    expect(modeloActual({ ...apagados, modelo_caido: "on" })).toEqual({ texto: "claude-sonnet-5 · respaldo", estado: "respaldo" });
+    expect(modeloActual(apagados)).toEqual({ texto: "gemini-3.8-flash", estado: "principal" });
+    expect(modeloActual({ ...apagados, modelo_caido: "on" })).toEqual({ texto: "gpt-6-luna · respaldo", estado: "respaldo" });
     // «Modelos caídos» manda aunque «Modelo caído» también esté encendido.
     expect(modeloActual({ modelo_caido: "on", modelos_caidos: "on" })).toEqual({ texto: "Sin modelo · falla técnica", estado: "sin_modelo" });
     expect(modeloActual({ ...apagados, modelos_caidos: "on" }).estado).toBe("sin_modelo");

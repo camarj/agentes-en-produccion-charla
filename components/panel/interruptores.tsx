@@ -14,6 +14,11 @@ const CAOS: Record<(typeof CLAVES_CAOS)[number], { titulo: string; efecto: strin
   latencia_alta: { titulo: "Latencia alta", efecto: "Cada búsqueda en láminas tarda 8 s por intento." },
   modelo_caido: { titulo: "Modelo caído", efecto: "El modelo principal falla y responde el de respaldo." },
   modelos_caidos: { titulo: "Modelos caídos", efecto: "Fallan el principal y el respaldo: falla técnica y escalamiento." },
+  limite_gemini: {
+    titulo: "Límite de Gemini",
+    efecto: "El modelo principal falla con un 429 de límite de uso de Google y responde el respaldo.",
+  },
+  base_datos_lenta: { titulo: "Base de datos lenta", efecto: "Cada consulta a la base de datos tarda 1,5 s más." },
 };
 
 type OnCambiar = (clave: ClaveActivable, valor: ValorOnOff) => void;

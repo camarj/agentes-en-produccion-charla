@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import type { Row } from "@libsql/client";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila as Row, type FuenteDb } from "./client";
 import { texto, textoONulo } from "./tipos";
 
 export type OrigenAsistente = "inscrito" | "invitado";

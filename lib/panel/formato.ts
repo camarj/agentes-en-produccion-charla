@@ -1,6 +1,6 @@
 // Formato de números, horas y etiquetas del panel (español neutro).
 
-import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "@/src/mastra/modelos";
+import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "@/src/mastra/modelos-ids";
 
 export const SIN_DATO = "—";
 

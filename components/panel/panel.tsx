@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ColaEscalamientos } from "./cola-escalamientos";
 import { InterruptoresCaos, KillSwitch } from "./interruptores";
 import { SelectorTramo } from "./lamina";
+import { Salud } from "./salud";
 import { Metricas } from "./metricas";
 import { usePanel } from "./use-panel";
 
@@ -19,7 +20,7 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
   const alDialogo = useCallback((abierto: boolean) => {
     dialogoAbierto.current = abierto;
   }, []);
-  const { metricas, interruptores, cola, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento } = usePanel({
+  const { metricas, interruptores, cola, salud, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento } = usePanel({
     seguroParaRecargar: () => !dialogoAbierto.current,
     alRecargar,
   });
@@ -64,7 +65,7 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
           <Metricas datos={metricas} valores={interruptores?.valores ?? null} />
           {!metricas.observabilidad.disponible ? (
             <p className="-mt-2 text-base text-muted-foreground">
-              Trazas no disponibles por ahora (Mastra se está conectando). Las demás métricas están al día.
+              Métricas de turnos no disponibles por ahora. Las demás métricas están al día.
             </p>
           ) : null}
         </>
@@ -76,8 +77,8 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
         </div>
       )}
 
-      {/* Tres columnas para que la pausa y los 4 interruptores quepan en 1080p sin desplazarse. */}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,6fr)] gap-3">
+      {/* Cuatro columnas para que la pausa, los interruptores, la salud y la cola quepan en 1080p. */}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,3fr)_minmax(0,4fr)_minmax(0,5fr)_minmax(0,4fr)] gap-3">
         {interruptores ? (
           <>
             <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
@@ -97,6 +98,7 @@ export function Panel({ studioUrl, alRecargar }: { studioUrl: string | null; alR
             <Skeleton className="h-full rounded-xl" />
           </>
         )}
+        {salud ? <Salud datos={salud} studioUrl={studioUrl} /> : <Skeleton className="h-full rounded-xl" />}
         {cola ? (
           <ColaEscalamientos filas={cola} onMarcar={(id, e) => void marcarEscalamiento(id, e)} />
         ) : (

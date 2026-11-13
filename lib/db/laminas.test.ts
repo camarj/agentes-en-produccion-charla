@@ -14,7 +14,6 @@ describe("laminas", () => {
     await repo.upsert({ numero: 1, titulo: "Portada", contenido: "Cómo lograr que tus agentes sobrevivan a producción", notas: null });
     await repo.upsert({ numero: 7, titulo: "Resiliencia", contenido: "Reintentos, modelo de respaldo y degradación elegante", notas: "Contar la caída del proveedor" });
     await repo.upsert({ numero: 9, titulo: "Guardrails", contenido: "Filtros de entrada y salida para el agente", notas: null });
-    await repo.reconstruirIndice();
   });
   afterEach(() => db.cerrar());
 
@@ -27,6 +26,17 @@ describe("laminas", () => {
     expect(a[0].puntaje).toBeGreaterThan(0);
     expect(a[0].notas).toContain("caída");
     expect(a[0].fragmento).toContain("respaldo");
+  });
+
+  // Verificación independiente 2026-11-12 (B1): con el diccionario `spanish` y
+  // las tildes quitadas antes, «especificación» y «especificaciones» quedaban
+  // con raíces distintas y la búsqueda no encontraba la lámina. Como FTS5, se
+  // compara sin raíces y con prefijos.
+  it("singular y plural, con o sin tilde, encuentran la misma lámina", async () => {
+    await repo.upsert({ numero: 13, titulo: "Del PRD al comportamiento", contenido: "Especificaciones y criterios de aceptación", notas: null });
+    await repo.upsert({ numero: 22, titulo: "Evaluaciones · Evals", contenido: "¿Lo hizo bien? Criterios del PRD", notas: null });
+    for (const q of ["especificación", "especificacion", "especificaciones"]) expect((await repo.buscar(q))[0]?.lamina).toBe(13);
+    for (const q of ["evaluación", "evaluacion", "evaluaciones"]) expect((await repo.buscar(q))[0]?.lamina).toBe(22);
   });
 
   it("notas es null cuando la lámina no tiene notas", async () => {
@@ -50,9 +60,59 @@ describe("laminas", () => {
 
   it("upsert actualiza una lámina existente", async () => {
     await repo.upsert({ numero: 9, titulo: "Guardrails v2", contenido: "Filtros", notas: "nuevo" });
-    await repo.reconstruirIndice();
     const r = await repo.buscar("guardrails");
     expect(r[0]).toMatchObject({ lamina: 9, titulo: "Guardrails v2" });
+  });
+});
+
+// Búsqueda de texto completo de Postgres (T2, S3): diccionario español, sin
+// tildes, título por encima del contenido, columna tsvector generada con GIN.
+describe("laminas · texto completo en Postgres", () => {
+  let db: Awaited<ReturnType<typeof crearDbTemporal>>;
+  let repo: ReturnType<typeof crearLaminas>;
+  beforeEach(async () => {
+    db = await crearDbTemporal();
+    repo = crearLaminas(db.fuente);
+    await repo.upsert({ numero: 2, titulo: "Observabilidad", contenido: "Trazas de cada agente en producción", notas: null });
+    await repo.upsert({ numero: 3, titulo: "Evaluaciones", contenido: "Puntajes de los jueces", notas: "Hablar de observabilidad al cierre" });
+    await repo.upsert({ numero: 4, titulo: "Agente", contenido: "Instrucciones y herramientas", notas: null });
+  });
+  afterEach(() => db.cerrar());
+  const numeros = async (q: string) => (await repo.buscar(q)).map((r) => r.lamina);
+
+  it("ignora tildes: «produccion» encuentra «producción»", async () => {
+    expect(await numeros("produccion")).toEqual([2]);
+    expect(await numeros("PRODUCCIÓN")).toEqual([2]);
+  });
+
+  it("reduce a la raíz en español: «agentes» ↔ «agente» y «trazas» ↔ «traza»", async () => {
+    expect((await numeros("agentes")).sort()).toEqual([2, 4]);
+    expect(await numeros("traza")).toEqual([2]);
+  });
+
+  it("el título pesa más que el cuerpo", async () => {
+    expect(await numeros("observabilidad")).toEqual([2, 3]);
+    expect((await numeros("agente"))[0]).toBe(4);
+  });
+
+  it("guarda palabras (documento) y raíces (raices) en columnas generadas, cada una con índice GIN", async () => {
+    const col = await db.cliente.execute(
+      "SELECT column_name, is_generated FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'laminas' AND column_name IN ('documento', 'raices') ORDER BY column_name",
+    );
+    expect(col.rows).toEqual([
+      { column_name: "documento", is_generated: "ALWAYS" },
+      { column_name: "raices", is_generated: "ALWAYS" },
+    ]);
+    const idx = await db.cliente.execute(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'laminas' AND indexdef ILIKE '%USING gin%' ORDER BY indexname",
+    );
+    expect(idx.rows.map((r) => r.indexname)).toEqual(["laminas_documento_idx", "laminas_raices_idx"]);
+  });
+
+  it("las raíces no cambian los primeros intentos: «patron» exacto no encuentra «patrones»", async () => {
+    await repo.upsert({ numero: 15, titulo: "Patrones", contenido: "Formas que se repiten", notas: null });
+    await repo.upsert({ numero: 16, titulo: "Un patrón", contenido: "ReAct", notas: null });
+    expect((await repo.buscar("patron")).map((r) => r.lamina)).toEqual([16]);
   });
 });
 

@@ -6,7 +6,7 @@
 # Lleva el código fuente y node_modules completos (con tsx y el CLI de mastra)
 # para correr dentro del contenedor: pnpm db:migrate, importar:laminas,
 # importar:inscritos, purgar:personales, evals y carga.
-# Debian (glibc) en lugar de alpine: los binarios nativos de libsql son glibc.
+# Debian (glibc) en lugar de alpine: imagen base estable para Next y Mastra.
 FROM node:22-bookworm-slim
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
@@ -33,8 +33,15 @@ COPY --chown=node:node . .
 # 1) Next standalone. server.js no copia estáticos ni public: se copian aquí
 #    para poder arrancarlo desde .next/standalone (también lo usa `pnpm evals`).
 # 2) Servidor Mastra con Studio (.mastra/output + .mastra/output/studio).
-# 3) Los builds abren las bases y crean archivos en data/: se borran para que el
-#    volumen arranque vacío (las migraciones corren al iniciar).
+# 3) data/ queda vacío: en Cloud Run todo se guarda en Cloud SQL y las
+#    migraciones corren al iniciar.
+# NEXT_PUBLIC_GOOGLE_CLIENT_ID se incrusta en el bundle del navegador al
+# construir: debe llegar como argumento de build (no es secreto).
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
+# Presentación activa (lib/tramos.ts): «espol» (por defecto) o «devfest».
+ARG NEXT_PUBLIC_PRESENTACION="devfest"
+ENV NEXT_PUBLIC_PRESENTACION=$NEXT_PUBLIC_PRESENTACION
 RUN pnpm build \
  && cp -r public .next/standalone/public \
  && cp -r .next/static .next/standalone/.next/static \
@@ -46,7 +53,6 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     MASTRA_AUTO_DETECT_URL=true
 
-VOLUME /app/data
 EXPOSE 3000 4111
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker-entrypoint.sh"]

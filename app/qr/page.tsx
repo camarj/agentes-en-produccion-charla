@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { MENSAJE_DEMASIADOS_INTENTOS } from "@/lib/acceso";
-import { ERRORES_CHAT } from "@/lib/chat";
+import { ERRORES_CHAT, MAX_MENSAJES_POR_DEFECTO } from "@/lib/chat";
 
 // Página para los colaboradores de Raúl: la abren en su teléfono para mostrar
 // el QR y resolver dudas de los asistentes. Estática y sin datos personales.
@@ -14,15 +14,19 @@ const DIRECCION = "charla.codetrain.cloud";
 
 const PASOS = [
   "Escanea el QR con la cámara del teléfono y abre el enlace.",
-  "Escribe el email con el que te inscribiste en Luma y toca «Entrar».",
-  "Si no estás inscrito, escribe tu email igual: te pedirá tu nombre y a qué te dedicas.",
+  "Toca «Continuar con Google» y elige tu cuenta.",
+  "La primera vez te pedirá a qué te dedicas, para darte ejemplos de tu trabajo.",
   "Pregunta lo que quieras sobre la charla. El asistente cita la lámina de donde saca la respuesta.",
 ];
 
 const PROBLEMAS: { situacion: string; ayuda: string }[] = [
   {
-    situacion: "«Revisa tu correo: no parece una dirección válida.»",
-    ayuda: "Revisa que el email no tenga espacios ni letras de más.",
+    situacion: "«No pudimos confirmar tu cuenta de Google. Intenta de nuevo.»",
+    ayuda: "Vuelve a tocar «Continuar con Google». Si sigue igual, prueba con otra cuenta de Google.",
+  },
+  {
+    situacion: "Entraste en otro teléfono y se cerró la sesión del primero",
+    ayuda: "Es a propósito: cada persona tiene una sola sesión abierta. Vuelve a entrar con Google donde quieras usarlo.",
   },
   {
     situacion: `«${MENSAJE_DEMASIADOS_INTENTOS}»`,
@@ -34,15 +38,15 @@ const PROBLEMAS: { situacion: string; ayuda: string }[] = [
   },
   {
     situacion: `«${ERRORES_CHAT.tope}»`,
-    ayuda: "Cada persona tiene 30 preguntas. Las dudas pendientes se hacen en la sesión de preguntas.",
+    ayuda: `Cada persona tiene ${MAX_MENSAJES_POR_DEFECTO} preguntas. Las dudas pendientes se hacen en la sesión de preguntas.`,
   },
   {
     situacion: "No aparece en su pantalla de inicio",
     ayuda: "Android: toca «Instalar app» en el chat. iPhone (Safari): Compartir → «Agregar a inicio».",
   },
   {
-    situacion: "¿Qué hacen con mi email?",
-    ayuda: "Solo se usa para personalizar las respuestas durante la charla.",
+    situacion: "¿Qué hacen con mi cuenta de Google?",
+    ayuda: "Solo se usa para saber quién eres y personalizar las respuestas durante la charla.",
   },
 ];
 

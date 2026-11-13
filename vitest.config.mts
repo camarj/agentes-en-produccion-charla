@@ -12,5 +12,10 @@ export default defineConfig({
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules/**", ".next/**", ".mastra/**"],
+    // PGlite (Postgres embebido de los tests) se inicializa una vez por corrida.
+    globalSetup: ["./lib/db/prueba-global.ts"],
+    // Arrancar PGlite en cada proceso de tests toma ~1 s (más con la máquina cargada).
+    hookTimeout: 30_000,
+    testTimeout: 30_000,
   },
 });

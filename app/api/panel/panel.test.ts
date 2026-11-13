@@ -7,21 +7,23 @@ import { crearFeedback } from "@/lib/db/feedback";
 import { interruptores } from "@/lib/db/interruptores";
 import { crearDbTemporal } from "@/lib/db/prueba";
 import { crearSesiones } from "@/lib/db/sesiones";
-import type { MetricasTrazas } from "@/lib/panel/metricas-trazas";
+import { crearTurnos, turnos } from "@/lib/db/turnos";
 import { peticion } from "@/lib/prueba-api";
 import { GET as getEscalamientos, PATCH as patchEscalamientos } from "./escalamientos/route";
 import { GET as getInterruptores, POST as postInterruptores } from "./interruptores/route";
 import { GET as getMetricas } from "./metricas/route";
+import { GET as getSalud } from "./salud/route";
+import { crearEventosSalud } from "@/lib/db/eventos-salud";
 
 const estado = vi.hoisted(() => ({
   fuente: null as null | (() => Promise<unknown>),
-  leerObservabilidad: vi.fn(async (): Promise<unknown> => null),
 }));
+const sondear = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/salud/observabilidad", () => ({ sondearObservabilidad: sondear }));
 vi.mock("@/lib/db/client", async (original) => ({
   ...(await original<typeof import("@/lib/db/client")>()),
   db: (() => estado.fuente!()) as FuenteDb,
 }));
-vi.mock("@/lib/panel/observabilidad", () => ({ leerMetricasObservabilidad: estado.leerObservabilidad }));
 
 const CLAVE = "clave-del-panel";
 const AUTH: Record<string, string> = { authorization: `Basic ${Buffer.from(`speaker:${CLAVE}`).toString("base64")}` };
@@ -35,8 +37,6 @@ beforeEach(async () => {
   db = await crearDbTemporal();
   estado.fuente = db.fuente;
   interruptores.limpiarCache();
-  estado.leerObservabilidad.mockReset();
-  estado.leerObservabilidad.mockResolvedValue(null);
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -86,7 +86,7 @@ describe("GET /api/panel/metricas", () => {
     await db.cliente.execute("UPDATE presupuesto SET coste_usd = 0.125 WHERE id = 1");
   }
 
-  it("métricas de charla.db y votos; observabilidad no disponible → disponible: false", async () => {
+  it("métricas de charla.db y votos; sin turnos → observabilidad disponible en cero", async () => {
     await sembrar();
     const r = await metricas();
     expect(r.status).toBe(200);
@@ -98,7 +98,7 @@ describe("GET /api/panel/metricas", () => {
       escalamientos_pendientes: 1,
       votos: { positivos: 2, negativos: 1 },
       presupuesto: { acumulado_usd: 0.125, maximo_usd: 10 },
-      observabilidad: { disponible: false },
+      observabilidad: { disponible: true, turnos: 0, errores: 0, latencia_p50_ms: null, modelo_en_uso: null },
     });
     expect(typeof cuerpo.actualizado_en).toBe("string");
     expect(cuerpo.version).toBe(VERSION_APP);
@@ -112,38 +112,41 @@ describe("GET /api/panel/metricas", () => {
     expect(cuerpo.presupuesto).toEqual({ acumulado_usd: 0, maximo_usd: null });
   });
 
-  it("incluye latencia, errores y bloqueos cuando la observabilidad responde", async () => {
-    const obs: MetricasTrazas = {
-      latencia: { p50Ms: 2900, p95Ms: 6700, muestras: 10 },
-      errores: 2,
-      erroresPorTipo: { tiempo: 1, herramienta: 1 },
-      bloqueos: { total: 3, porMotivo: { inyeccion: 1, fuera_de_alcance: 2 } },
-      turnos: 15,
-      respaldo: { ultimaHora: 4, ultimaEn: "2026-09-26T18:55:00.000Z" },
-      modeloEnUso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z", traceId: "t-interno" },
-    };
-    estado.leerObservabilidad.mockResolvedValue(obs);
+  it("latencia, fallas, bloqueos, respaldo y modelo en uso salen de la tabla turnos (sin leer trazas)", async () => {
+    const ahora = Date.now();
+    const t = crearTurnos(db.fuente);
+    const base = { motivoBloqueo: null, tipoFalla: null, respaldo: false, modelo: "gemini-3.8-flash", traceId: "t-x" } as const;
+    for (const d of [2900, 2000, 6700]) await t.registrar({ ...base, iniciadoMs: ahora - 10 * 60_000, duracionMs: d, resultado: "ok" });
+    await t.registrar({ ...base, iniciadoMs: ahora - 5 * 60_000, duracionMs: null, resultado: "falla", tipoFalla: "tiempo", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 5 * 60_000, duracionMs: 4000, resultado: "falla", tipoFalla: "herramienta" });
+    await t.registrar({ ...base, iniciadoMs: ahora - 4 * 60_000, duracionMs: 500, resultado: "bloqueo", motivoBloqueo: "inyeccion", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 4 * 60_000, duracionMs: 500, resultado: "bloqueo", motivoBloqueo: "fuera_de_alcance", modelo: null });
+    await t.registrar({ ...base, iniciadoMs: ahora - 60_000, duracionMs: 3500, resultado: "ok", respaldo: true, modelo: "openai/gpt-6-luna", traceId: "t-interno" });
     const cuerpo = await (await metricas()).json();
+    const en = new Date(ahora - 60_000).toISOString();
     expect(cuerpo.observabilidad).toEqual({
       disponible: true,
-      latencia_p50_ms: 2900,
+      latencia_p50_ms: 3500,
       latencia_p95_ms: 6700,
-      muestras_latencia: 10,
+      muestras_latencia: 5,
       errores: 2,
       errores_por_tipo: { tiempo: 1, herramienta: 1 },
-      bloqueos: { total: 3, por_motivo: { inyeccion: 1, fuera_de_alcance: 2 } },
-      turnos: 15,
-      respaldo: { ultima_hora: 4, ultima_en: "2026-09-26T18:55:00.000Z" },
+      bloqueos: { total: 2, por_motivo: { inyeccion: 1, fuera_de_alcance: 1 } },
+      turnos: 8,
+      respaldo: { ultima_hora: 1, ultima_en: en },
       // Sin el traceId interno.
-      modelo_en_uso: { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T18:55:00.000Z" },
+      modelo_en_uso: { estado: "respaldo", modelo: "openai/gpt-6-luna", en },
     });
   });
 
-  it("si la lectura de observabilidad lanza, igual responde las métricas de charla.db", async () => {
-    estado.leerObservabilidad.mockRejectedValue(new Error("Neon caído"));
+  it("si la lectura de turnos falla, igual responde las métricas de charla.db", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const espia = vi.spyOn(turnos, "resumen").mockRejectedValue(new Error("tabla bloqueada"));
     const r = await metricas();
     expect(r.status).toBe(200);
     expect((await r.json()).observabilidad).toEqual({ disponible: false });
+    espia.mockRestore();
+    error.mockRestore();
   });
 
   it("500 genérico si falla charla.db", async () => {
@@ -158,13 +161,58 @@ describe("GET /api/panel/metricas", () => {
   });
 });
 
+describe("GET /api/panel/salud", () => {
+  const salud = (cabeceras = AUTH) => getSalud(peticion("/api/panel/salud", { cabeceras }));
+
+  it("401 sin la contraseña del panel", async () => {
+    expect((await salud({})).status).toBe(401);
+    expect((await salud(MAL)).status).toBe(401);
+  });
+
+  it("semáforos por servicio y registro en vivo, más nuevo primero, con trace id; sondea la observabilidad", async () => {
+    const eventos = crearEventosSalud(db.fuente);
+    await eventos.registrar("gemini_sobrecarga", { traceId: "t-1", ahora: Date.now() - 2000 });
+    await eventos.registrar("busqueda_agotada", { traceId: "t-2", ahora: Date.now() - 1000 });
+    await db.cliente.execute("UPDATE presupuesto SET coste_usd = 8 WHERE id = 1");
+    const r = await salud();
+    expect(r.status).toBe(200);
+    expect(r.headers.get("cache-control")).toBe("no-store");
+    const cuerpo = await r.json();
+    expect(Object.fromEntries(cuerpo.servicios.map((x: { id: string; semaforo: string }) => [x.id, x.semaforo]))).toEqual({
+      gemini: "ambar",
+      openai: "verde",
+      base_datos: "verde",
+      trazas: "verde",
+      busqueda: "rojo",
+      guardrails: "verde",
+      entrada: "verde",
+      presupuesto: "ambar",
+    });
+    expect(cuerpo.eventos.map((e: { texto: string; trace_id: string; nivel: string }) => [e.texto, e.trace_id, e.nivel])).toEqual([
+      ["buscar_laminas agotó 3 intentos", "t-2", "falla"],
+      ["Gemini con alta demanda (503) → respaldo activo", "t-1", "aviso"],
+    ]);
+    expect(sondear).toHaveBeenCalled();
+  });
+});
+
 describe("/api/panel/interruptores", () => {
   it("GET: valores, lámina como número y última activación", async () => {
     const cuerpo = await (await leerInterruptores()).json();
     expect(cuerpo).toEqual({
-      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 1 },
-      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
+      valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 1 },
+      ultimas_activaciones: { herramienta_caida: null, latencia_alta: null, modelo_caido: null, modelos_caidos: null, limite_gemini: null, base_datos_lenta: null, kill_switch: null },
     });
+  });
+
+  it("POST acepta limite_gemini y base_datos_lenta (apagados por defecto) y guarda su activación", async () => {
+    for (const clave of ["limite_gemini", "base_datos_lenta"] as const) {
+      const cuerpo = await (await cambiar({ clave, valor: "on" })).json();
+      expect(cuerpo.valores[clave]).toBe("on");
+      expect(cuerpo.ultimas_activaciones[clave]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+      expect((await cambiar({ clave, valor: "quizas" })).status).toBe(400);
+      await cambiar({ clave, valor: "off" });
+    }
   });
 
   it("POST acepta modelos_caidos (fallan el principal y el respaldo) y guarda su activación", async () => {
@@ -191,14 +239,14 @@ describe("/api/panel/interruptores", () => {
     expect(apagado.ultimas_activaciones.kill_switch).not.toBeNull();
   });
 
-  it.each([1, 40, "12", 20])("lámina %s válida", async (valor) => {
+  it.each([1, 25, "12", 20])("lámina %s válida", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(200);
     expect((await r.json()).valores.lamina_actual).toBe(Number(valor));
     expect((await interruptores.obtenerTodos()).lamina_actual).toBe(String(Number(valor)));
   });
 
-  it.each([0, 41, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
+  it.each([0, 26, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(400);
     expect((await r.json()).error).toBe("interruptor_invalido");

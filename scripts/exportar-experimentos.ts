@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { createClient, type Client } from "@libsql/client";
-import { urlArchivo } from "../lib/rutas";
+import type { Pool } from "pg";
+import { abrirCliente } from "../lib/db/client";
+import { crearPoolMastra, esquemaMastra } from "../src/mastra/storage";
 import { ejecutarCli } from "./comun";
 
-// Exporta experimentos de Mastra (Studio → Datasets → Experiments) de una base
-// LibSQL a un paquete JSON, para importarlos en otra base con
-// `pnpm importar:experimentos`. El dataset se renombra (nuevo id y nombre) para
+// Exporta experimentos de Mastra (Studio → Datasets → Experiments) desde el
+// esquema de Mastra en Postgres (DATABASE_URL, esquema `mastra`) a un paquete
+// JSON, para importarlos en otra base con `pnpm importar:experimentos`. Se lee
+// con SQL directo (no con el API de datasets, que crea ids nuevos) para
+// conservar los ids. El dataset se renombra (nuevo id y nombre) para
 // no mezclarse con el `charla-v1` del destino; los demás ids se conservan, así
 // los enlaces item → resultado → puntaje y los traceId siguen valiendo.
 
@@ -34,8 +37,8 @@ export interface Paquete {
     experimentos: { id: string; nombre: string | null; creado: string }[];
     conteos: Record<Tabla, number>;
     columnas: Record<Tabla, string[]>;
-    // Columnas guardadas como JSONB en LibSQL: se exportan como texto con
-    // json() y se vuelven a guardar con jsonb().
+    // Columnas JSONB: se exportan como texto JSON y se vuelven a guardar como
+    // JSONB. (Los paquetes viejos salieron de LibSQL; el formato es el mismo.)
     columnasJsonb: Record<Tabla, string[]>;
   };
   tablas: Record<Tabla, Fila[]>;
@@ -53,63 +56,91 @@ export interface OpcionesExportacion {
 export const ID_ITERACION = "charla-v1-iteracion-2026-09-25";
 export const NOMBRE_ITERACION = "charla-v1 · iteración 2026-09-25";
 
-export async function columnasDe(cliente: Client, tabla: string): Promise<string[]> {
-  const r = await cliente.execute(`PRAGMA table_info("${tabla}")`);
-  return r.rows.map((f) => String(f.name));
+// Lo que se usa de un pool de pg.
+export type PoolPg = Pick<Pool, "query" | "connect">;
+
+export interface ColumnaPg {
+  nombre: string;
+  // Tipo exacto para los casts (p. ej. `timestamp without time zone`, `jsonb`).
+  tipo: string;
+  // NOT NULL y sin valor por defecto.
+  obligatoria: boolean;
 }
 
-const comillas = (c: string) => `"${c.replaceAll('"', '""')}"`;
+export const comillas = (c: string) => `"${c.replaceAll('"', '""')}"`;
+export const tablaPg = (esquema: string, tabla: string) => `${comillas(esquema)}.${comillas(tabla)}`;
 
-// Lee filas con los JSONB ya convertidos a texto y detecta qué columnas lo son.
-async function leer(cliente: Client, tabla: Tabla, donde: string, args: Valor[]) {
-  const columnas = await columnasDe(cliente, tabla);
-  if (columnas.length === 0) throw new Error(`La tabla ${tabla} no existe en la base de origen`);
-  const select = columnas
-    .map((c, i) => `CASE WHEN typeof(${comillas(c)}) = 'blob' THEN json(${comillas(c)}) ELSE ${comillas(c)} END AS ${comillas(c)}, typeof(${comillas(c)}) AS "__t${i}"`)
-    .join(", ");
-  const r = await cliente.execute({ sql: `SELECT ${select} FROM ${tabla} WHERE ${donde} ORDER BY rowid`, args });
-  const tipos = columnas.map(() => new Set<string>());
+// Columnas de una tabla de Mastra en orden; [] si la tabla no existe.
+export async function columnasDe(pool: PoolPg, esquema: string, tabla: string): Promise<ColumnaPg[]> {
+  const r = await pool.query(
+    `SELECT a.attname AS nombre, format_type(a.atttypid, a.atttypmod) AS tipo, (a.attnotnull AND NOT a.atthasdef) AS obligatoria
+     FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+     ORDER BY a.attnum`,
+    [esquema, tabla],
+  );
+  return r.rows.map((f) => ({ nombre: String(f.nombre), tipo: String(f.tipo), obligatoria: f.obligatoria === true }));
+}
+
+// Fechas como ISO en UTC (igual que los paquetes de LibSQL), booleanos como
+// 0/1 y JSONB como texto: así cada valor del paquete es texto, número o null.
+const ISO = `'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'`;
+function lecturaDe({ nombre, tipo }: ColumnaPg): string {
+  const c = comillas(nombre);
+  if (tipo === "jsonb" || tipo === "json") return `${c}::text AS ${c}`;
+  if (tipo === "timestamp with time zone") return `to_char(${c} AT TIME ZONE 'UTC', ${ISO}) AS ${c}`;
+  if (tipo === "timestamp without time zone") return `to_char(${c}, ${ISO}) AS ${c}`;
+  if (tipo === "boolean") return `${c}::int AS ${c}`;
+  return c;
+}
+
+const orden = (t: Tabla) => (t === "mastra_dataset_items" ? `"id", "datasetVersion"` : `"id"`);
+
+async function leer(pool: PoolPg, esquema: string, tabla: Tabla, donde: string, args: Valor[]) {
+  const defs = await columnasDe(pool, esquema, tabla);
+  if (defs.length === 0) throw new Error(`La tabla ${tabla} no existe en la base de origen`);
+  const r = await pool.query(`SELECT ${defs.map(lecturaDe).join(", ")} FROM ${tablaPg(esquema, tabla)} WHERE ${donde} ORDER BY ${orden(tabla)}`, args);
   const filas: Fila[] = r.rows.map((f) => {
     const fila: Fila = {};
-    columnas.forEach((c, i) => {
-      tipos[i].add(String(f[`__t${i}`]));
-      const v = f[c];
-      if (v !== null && typeof v !== "string" && typeof v !== "number") throw new Error(`${tabla}.${c}: tipo no soportado (${typeof v})`);
-      fila[c] = v;
-    });
+    for (const { nombre } of defs) {
+      const v = f[nombre];
+      if (v !== null && typeof v !== "string" && typeof v !== "number") throw new Error(`${tabla}.${nombre}: tipo no soportado (${typeof v})`);
+      fila[nombre] = v;
+    }
     return fila;
   });
-  const jsonb = columnas.filter((_c, i) => tipos[i].has("blob"));
-  for (const c of jsonb) {
-    const t = tipos[columnas.indexOf(c)];
-    if ([...t].some((x) => x !== "blob" && x !== "null")) throw new Error(`${tabla}.${c} mezcla JSONB con otros tipos`);
-  }
+  const columnas = defs.map((d) => d.nombre);
+  const jsonb = defs.filter((d) => d.tipo === "jsonb" || d.tipo === "json").map((d) => d.nombre);
   return { columnas, jsonb, filas };
 }
 
-const marcadores = (n: number) => Array.from({ length: n }, () => "?").join(", ");
+const marcadores = (desde: number, n: number) => Array.from({ length: n }, (_, i) => `$${desde + i}`).join(", ");
 
-export async function exportarExperimentos(cliente: Client, opciones: OpcionesExportacion): Promise<Paquete> {
+export async function exportarExperimentos(
+  pool: PoolPg,
+  opciones: OpcionesExportacion & { esquema?: string },
+): Promise<Paquete> {
+  const esquema = opciones.esquema ?? esquemaMastra();
   const origen = opciones.datasetOrigen ?? "charla-v1";
   const filtroExp = opciones.ids?.length
-    ? { donde: `datasetId = ? AND id IN (${marcadores(opciones.ids.length)})`, args: [origen, ...opciones.ids] }
-    : { donde: "datasetId = ? AND createdAt >= ?", args: [origen, opciones.desde ?? "2026-09-25"] };
+    ? { donde: `"datasetId" = $1 AND id IN (${marcadores(2, opciones.ids.length)})`, args: [origen, ...opciones.ids] }
+    : { donde: `"datasetId" = $1 AND "createdAt" >= $2::timestamp`, args: [origen, opciones.desde ?? "2026-09-25"] };
 
-  const experimentos = await leer(cliente, "mastra_experiments", filtroExp.donde, filtroExp.args);
+  const experimentos = await leer(pool, esquema, "mastra_experiments", filtroExp.donde, filtroExp.args);
   if (experimentos.filas.length === 0) throw new Error(`No hay ningún experimento del dataset ${origen} con ese filtro`);
   if (opciones.ids?.length && experimentos.filas.length !== opciones.ids.length) {
     throw new Error(`Se pidieron ${opciones.ids.length} experimentos y solo existen ${experimentos.filas.length}`);
   }
   const idsExp = experimentos.filas.map((e) => String(e.id));
-  const enExp = marcadores(idsExp.length);
+  const enExp = marcadores(1, idsExp.length);
 
   const leidas: Record<Tabla, Awaited<ReturnType<typeof leer>>> = {
-    mastra_datasets: await leer(cliente, "mastra_datasets", "id = ?", [origen]),
-    mastra_dataset_versions: await leer(cliente, "mastra_dataset_versions", "datasetId = ?", [origen]),
-    mastra_dataset_items: await leer(cliente, "mastra_dataset_items", "datasetId = ?", [origen]),
+    mastra_datasets: await leer(pool, esquema, "mastra_datasets", "id = $1", [origen]),
+    mastra_dataset_versions: await leer(pool, esquema, "mastra_dataset_versions", `"datasetId" = $1`, [origen]),
+    mastra_dataset_items: await leer(pool, esquema, "mastra_dataset_items", `"datasetId" = $1`, [origen]),
     mastra_experiments: experimentos,
-    mastra_experiment_results: await leer(cliente, "mastra_experiment_results", `experimentId IN (${enExp})`, idsExp),
-    mastra_scorers: await leer(cliente, "mastra_scorers", `source = 'TEST' AND runId IN (${enExp})`, idsExp),
+    mastra_experiment_results: await leer(pool, esquema, "mastra_experiment_results", `"experimentId" IN (${enExp})`, idsExp),
+    mastra_scorers: await leer(pool, esquema, "mastra_scorers", `source = 'TEST' AND "runId" IN (${enExp})`, idsExp),
   };
   if (leidas.mastra_datasets.filas.length !== 1) throw new Error(`No existe el dataset ${origen}`);
 
@@ -127,7 +158,7 @@ export async function exportarExperimentos(cliente: Client, opciones: OpcionesEx
   return {
     meta: {
       formato: "mastra-experimentos/1",
-      origen: { archivo: opciones.archivo ?? "data/mastra.db", datasetId: origen },
+      origen: { archivo: opciones.archivo ?? `postgres:${esquema}`, datasetId: origen },
       exportadoEn: new Date().toISOString(),
       filtro: opciones.ids?.length ? { ids: opciones.ids } : { desde: opciones.desde ?? "2026-09-25" },
       destino: { datasetId: opciones.nuevoId, datasetNombre: opciones.nuevoNombre },
@@ -157,22 +188,21 @@ export function revisarDatosPersonales(texto: string, asistentes: { email: strin
   };
 }
 
+// Asistentes de la base de charla (Postgres, DATABASE_URL); null si no está configurada.
 async function asistentesReales(): Promise<{ email: string; nombre: string }[] | null> {
-  const url = urlArchivo(process.env.DATABASE_PATH ?? "./data/charla.db");
-  if (!fs.existsSync(url.slice("file:".length))) return null;
-  const c = createClient({ url });
+  if (!process.env.DATABASE_URL?.trim()) return null;
+  const c = abrirCliente(undefined, { max: 1 });
   try {
     const r = await c.execute("SELECT email, nombre FROM asistentes");
     return r.rows.map((f) => ({ email: String(f.email), nombre: String(f.nombre) }));
   } finally {
-    c.close();
+    await c.close();
   }
 }
 
 async function principal() {
   const { values } = parseArgs({
     options: {
-      db: { type: "string", default: "file:./data/mastra.db" },
       desde: { type: "string", default: "2026-09-25" },
       ids: { type: "string" },
       salida: { type: "string", default: "evals/experimentos/iteracion-2026-09-25.json" },
@@ -180,19 +210,18 @@ async function principal() {
       "nuevo-nombre": { type: "string", default: NOMBRE_ITERACION },
     },
   });
-  const url = urlArchivo(values.db);
-  const cliente = createClient({ url, concurrency: 1 });
+  // Origen: el esquema de Mastra en DATABASE_URL (MASTRA_ESQUEMA para otro esquema).
+  const pool = crearPoolMastra();
   let paquete: Paquete;
   try {
-    paquete = await exportarExperimentos(cliente, {
+    paquete = await exportarExperimentos(pool, {
       desde: values.desde,
       ids: values.ids ? values.ids.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
       nuevoId: values["nuevo-id"],
       nuevoNombre: values["nuevo-nombre"],
-      archivo: path.basename(url.slice("file:".length)),
     });
   } finally {
-    cliente.close();
+    await pool.end();
   }
   const texto = JSON.stringify(paquete, null, 2);
 
@@ -202,7 +231,7 @@ async function principal() {
     `Revisión de datos personales: ${revision.emails} emails en el paquete; ` +
       (asistentes
         ? `${revision.emailsDeAsistentes} emails y ${revision.nombresDeAsistentes} nombres de ${asistentes.length} asistentes reales.`
-        : "no se encontró charla.db para comparar con los asistentes."),
+        : "no hay DATABASE_URL para comparar con los asistentes."),
   );
   if (revision.emailsDeAsistentes + revision.nombresDeAsistentes > 0) {
     throw new Error("El paquete contiene datos de asistentes reales: no se escribió el archivo");

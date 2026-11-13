@@ -1,7 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { crearAsistentes } from "./asistentes";
 import { crearDbTemporal } from "./prueba";
+import type { Cliente, Sentencia } from "./client";
 import { crearSesiones } from "./sesiones";
+
+describe("sesiones.reemplazar: cerrojo por asistente", () => {
+  // Verificación independiente 2026-11-12 (B2): en Postgres (READ COMMITTED)
+  // revocar + insertar no basta entre copias simultáneas; el cerrojo consultivo
+  // por asistente va primero en la transacción, como en escalamientos.
+  it("toma pg_advisory_xact_lock(1, hashtext(asistente)) antes de revocar e insertar", async () => {
+    const vistos: Sentencia[][] = [];
+    const falso = {
+      execute: async () => ({ rows: [], rowsAffected: 0 }),
+      batch: async (s: Sentencia[]) => {
+        vistos.push(s);
+        return s.map(() => ({ rows: [{ token: "t", asistente_id: "a", thread_id: "h", mensajes: 0, creada_en: "2026-11-12 00:00:00", revocada_en: null }], rowsAffected: 1 }));
+      },
+      close: async () => {},
+    } as unknown as Cliente;
+    await crearSesiones(async () => falso).reemplazar("asistente-1");
+    const [lote] = vistos;
+    expect(lote[0]).toEqual({ sql: "SELECT pg_advisory_xact_lock(1, hashtext(?))", args: ["asistente-1"] });
+    expect(typeof lote[1] === "string" ? lote[1] : lote[1].sql).toMatch(/^UPDATE sesiones SET revocada_en/);
+    expect(typeof lote[2] === "string" ? lote[2] : lote[2].sql).toMatch(/INSERT INTO sesiones/);
+  });
+});
 
 describe("sesiones", () => {
   let db: Awaited<ReturnType<typeof crearDbTemporal>>;
@@ -22,6 +45,26 @@ describe("sesiones", () => {
     expect(s1.threadId).toBe(`charla-${asistenteId}`);
     expect(s2.threadId).toBe(s1.threadId);
     expect(s1.mensajes).toBe(0);
+  });
+
+  it("reemplazar revoca las sesiones anteriores y conserva hilo y contador", async () => {
+    const vieja = await repo.crear(asistenteId);
+    await repo.incrementarMensajes(vieja.token);
+    await repo.incrementarMensajes(vieja.token);
+    const nueva = await repo.reemplazar(asistenteId);
+    expect(nueva.token).not.toBe(vieja.token);
+    expect(nueva.threadId).toBe(vieja.threadId);
+    expect(await repo.obtener(vieja.token)).toBeNull();
+    expect((await repo.obtener(nueva.token))?.asistenteId).toBe(asistenteId);
+    // El tope de mensajes sigue contando los de la sesión revocada.
+    expect(await repo.incrementarMensajes(nueva.token)).toBe(3);
+  });
+
+  it("reemplazar no toca las sesiones de otros asistentes", async () => {
+    const otroId = (await crearAsistentes(db.fuente).crearInvitado({ email: "o@e.com", nombre: "O" })).id;
+    const delOtro = await repo.crear(otroId);
+    await repo.reemplazar(asistenteId);
+    expect((await repo.obtener(delOtro.token))?.asistenteId).toBe(otroId);
   });
 
   it("obtener devuelve la sesión o null", async () => {

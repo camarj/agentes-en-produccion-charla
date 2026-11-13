@@ -18,7 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parsearArgumentos } from "./argumentos";
 import { cargarDataset } from "./dataset";
-import { prepararDirectorio, variablesDeEntorno } from "./entorno";
+import { borrarEsquemaTemporal, crearEsquemaTemporal, nombreEsquema, prepararDirectorio, variablesDeEntorno } from "./entorno";
 
 const RAIZ = path.resolve(__dirname, "..");
 const HTML_LAMINAS = path.join(RAIZ, "agentes-produccion-taller-v43-before-slide14-v2.html");
@@ -34,7 +34,10 @@ async function principal(): Promise<number> {
 
   // 1) Entorno aislado ANTES de cargar cualquier módulo que abra una base.
   const dir = prepararDirectorio();
-  Object.assign(process.env, variablesDeEntorno({ dir }, process.env));
+  const urlOriginal = process.env.DATABASE_URL?.trim() ?? "";
+  const variables = variablesDeEntorno({ dir }, process.env);
+  await crearEsquemaTemporal(dir);
+  Object.assign(process.env, variables);
   const conservar = args.conservarTemp;
 
   const { db } = await import("@/lib/db/client");
@@ -289,8 +292,10 @@ async function principal(): Promise<number> {
   // Vacía los lotes de trazas pendientes antes de cerrar el almacenamiento.
   await mastra.observability.flush().catch(() => undefined);
   await mastra.shutdown().catch(() => undefined);
-  if (!conservar) fs.rmSync(dir, { recursive: true, force: true });
-  else log(`Carpeta temporal conservada: ${dir}`);
+  if (!conservar) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    await borrarEsquemaTemporal(dir, urlOriginal).catch(() => log(`No se pudo borrar el esquema temporal ${nombreEsquema(dir)}`));
+  } else log(`Carpeta y esquema temporales conservados: ${dir} · ${nombreEsquema(dir)}`);
   return reporte.codigoSalida(resultado.verdict);
 }
 

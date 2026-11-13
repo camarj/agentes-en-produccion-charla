@@ -1,44 +1,87 @@
+import type { ModelWithRetries } from "@mastra/core/agent";
 import { SpanType } from "@mastra/core/observability";
 import type { ProcessInputStepArgs, ProcessInputStepResult, Processor } from "@mastra/core/processors";
 import { APICallError } from "ai";
-import { interruptores as interruptoresPorDefecto, type Interruptores } from "@/lib/db/interruptores";
-import { MODELO_PRINCIPAL, MODELO_RESPALDO, OPCIONES_PROVEEDOR_PRINCIPAL } from "../modelos";
+import { senalesDe, type CausaRespaldo } from "@/lib/salud/senales";
+import { interruptores as interruptoresPorDefecto, type InterruptoresCompletos } from "@/lib/db/interruptores";
+import {
+  MODELO_PRINCIPAL,
+  MODELO_RESPALDO,
+  modeloPrincipal,
+  OPCIONES_PROVEEDOR_PRINCIPAL,
+  OPCIONES_PROVEEDOR_RESPALDO,
+} from "../modelos";
+import { conLimitePrimerTrozo } from "./primer-trozo";
 
 // Cadena de modelos del agente (fallback nativo de Mastra). Ante un error del
 // proveedor, Mastra reintenta el mismo modelo `maxRetries` veces (solo si el
 // error es reintentable: 5xx, 529, 408, 409, 429 o de red) y luego pasa al
-// siguiente modelo. Principal (OpenAI): 1 reintento; respaldo (Anthropic): 1 intento.
-export function modelosConRespaldo() {
+// siguiente modelo. Principal (Gemini en Vertex): 1 reintento, y también si no
+// empieza a responder a tiempo (primer-trozo.ts); respaldo (OpenAI): 1 intento.
+export function modelosConRespaldo(): ModelWithRetries[] {
   return [
     {
       id: "principal",
-      model: MODELO_PRINCIPAL,
+      // Se crea en cada turno: el proveedor de Vertex exige el proyecto al
+      // crear el modelo, y la app (tests, Studio) debe arrancar sin él.
+      // El cast salva la diferencia de versión de @ai-sdk/provider entre
+      // @ai-sdk/google-vertex y @mastra/core (misma interfaz LanguageModelV4 en
+      // ejecución; lo prueba el test HTTP de este archivo).
+      // Con plan B por tiempo: si no hay contenido en ESPERA_PRIMER_TROZO_MS,
+      // se corta (408 reintentable), se reintenta 1 vez y luego responde el respaldo.
+      model: (() => conLimitePrimerTrozo(modeloPrincipal())) as unknown as ModelWithRetries["model"],
       maxRetries: 1,
-      // Solo aplica a OpenAI; el respaldo (Anthropic) no la recibe.
-      providerOptions: { openai: { ...OPCIONES_PROVEEDOR_PRINCIPAL.openai } },
+      providerOptions: { vertex: { thinkingConfig: { ...OPCIONES_PROVEEDOR_PRINCIPAL.vertex.thinkingConfig } } },
     },
-    { id: "respaldo", model: MODELO_RESPALDO, maxRetries: 0 },
+    {
+      id: "respaldo",
+      model: MODELO_RESPALDO,
+      maxRetries: 0,
+      providerOptions: { openai: { ...OPCIONES_PROVEEDOR_RESPALDO.openai } },
+    },
   ];
 }
 
+// «proveedor/modelo» comparable con MODELO_PRINCIPAL y MODELO_RESPALDO. El
+// proveedor de Vertex del AI SDK se llama «google.vertex.chat».
 function idModelo(model: { provider?: string; modelId?: string } | undefined): string {
-  return `${model?.provider ?? ""}/${model?.modelId ?? ""}`;
+  const proveedor = model?.provider ?? "";
+  return `${proveedor.startsWith("google.vertex") ? "google-vertex" : proveedor}/${model?.modelId ?? ""}`;
 }
 
 // Error de sobrecarga simulado con la forma del proveedor del modelo:
+// - Google (Vertex): 503 con `{"error":{"code":503,"status":"UNAVAILABLE"}}`;
 // - OpenAI: 503 con `{"error":{"type":"server_error"}}`;
 // - Anthropic: 529 con `{"type":"error","error":{"type":"overloaded_error"}}`.
-// Ambos son `APICallError` reintentables, como los reales.
+// Todos son `APICallError` reintentables, como los reales.
 export function crearErrorSobrecarga(modelo: string): APICallError {
+  const google = modelo.startsWith("google");
   const openai = modelo.startsWith("openai/");
-  const cuerpo = openai
-    ? { error: { message: "The server is overloaded", type: "server_error", param: null, code: null } }
-    : { type: "error", error: { type: "overloaded_error", message: "Overloaded" } };
+  const cuerpo = google
+    ? { error: { code: 503, message: "The model is overloaded. Please try again later.", status: "UNAVAILABLE" } }
+    : openai
+      ? { error: { message: "The server is overloaded", type: "server_error", param: null, code: null } }
+      : { type: "error", error: { type: "overloaded_error", message: "Overloaded" } };
   return new APICallError({
     message: "Overloaded (simulado por el interruptor modelo_caido)",
     url: `simulado://${modelo}`,
     requestBodyValues: {},
-    statusCode: openai ? 503 : 529,
+    statusCode: google || openai ? 503 : 529,
+    responseBody: JSON.stringify(cuerpo),
+    isRetryable: true,
+  });
+}
+
+// Límite de uso simulado de Google (interruptor «Límite de Gemini», PRD §15
+// G7): 429 con `{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}`,
+// reintentable como el real. Mastra reintenta y pasa al respaldo.
+export function crearErrorLimiteUso(modelo: string): APICallError {
+  const cuerpo = { error: { code: 429, message: "Resource has been exhausted (e.g. check quota).", status: "RESOURCE_EXHAUSTED" } };
+  return new APICallError({
+    message: "Resource exhausted (simulado por el interruptor limite_gemini)",
+    url: `simulado://${modelo}`,
+    requestBodyValues: {},
+    statusCode: 429,
     responseBody: JSON.stringify(cuerpo),
     isRetryable: true,
   });
@@ -81,12 +124,13 @@ export function esErrorDeSobrecarga(error: unknown): boolean {
 }
 
 // Modelo (LanguageModelV2) con el mismo id que el principal que falla con un
-// error de sobrecarga (503 en OpenAI) sin llamar al proveedor. Como el error es reintentable, Mastra aplica su
+// error de sobrecarga (503) sin llamar al proveedor. Como el error es reintentable, Mastra aplica su
 // reintento y su cambio de modelo igual que con una caída real.
-export function crearModeloCaido(modelo: string) {
+// `error`: el error que lanza (por defecto, la sobrecarga 503).
+export function crearModeloCaido(modelo: string, error: () => APICallError = () => crearErrorSobrecarga(modelo)) {
   const [provider, ...resto] = modelo.split("/");
   const fallar = async (): Promise<never> => {
-    throw crearErrorSobrecarga(modelo);
+    throw error();
   };
   return {
     specificationVersion: "v2" as const,
@@ -104,7 +148,7 @@ interface SpanMinimo {
 }
 
 export interface OpcionesFallbackModelo {
-  interruptores?: { obtenerTodos: () => Promise<Partial<Pick<Interruptores, "modelo_caido" | "modelos_caidos">>> };
+  interruptores?: { obtenerTodos: () => Promise<Partial<Pick<InterruptoresCompletos, "modelo_caido" | "modelos_caidos" | "limite_gemini">>> };
   principal?: string;
   respaldo?: string;
 }
@@ -129,26 +173,33 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
     this.respaldo = opciones.respaldo ?? MODELO_RESPALDO;
   }
 
-  private async caos(): Promise<{ principal: boolean; ambos: boolean }> {
+  private async caos(): Promise<{ principal: boolean; ambos: boolean; causa: CausaRespaldo | null }> {
     try {
       const v = await this.interruptores.obtenerTodos();
       const ambos = v.modelos_caidos === "on";
-      return { principal: ambos || v.modelo_caido === "on", ambos };
+      // «Modelos caídos» manda; después «Límite de Gemini» (429) y «Modelo caído» (503).
+      const causa: CausaRespaldo | null = ambos ? "sobrecarga" : v.limite_gemini === "on" ? "limite_uso" : v.modelo_caido === "on" ? "sobrecarga" : null;
+      return { principal: causa !== null, ambos, causa };
     } catch {
-      return { principal: false, ambos: false }; // si no se pueden leer, se asumen apagados
+      return { principal: false, ambos: false, causa: null }; // si no se pueden leer, se asumen apagados
     }
   }
 
-  async processInputStep({ model, tracingContext }: ProcessInputStepArgs): Promise<ProcessInputStepResult | undefined> {
+  async processInputStep({ model, tracingContext, requestContext }: ProcessInputStepArgs): Promise<ProcessInputStepResult | undefined> {
     const span = tracingContext?.currentSpan as SpanMinimo | undefined;
     const actual = idModelo(model);
+    // Señales del turno para el panel (PRD §15 G7); undefined fuera de la ruta de chat.
+    const senales = senalesDe(requestContext);
 
     if (actual === this.respaldo) {
+      const caos = await this.caos();
       // «Modelos caídos»: el respaldo también falla (nadie puede responder).
-      if ((await this.caos()).ambos) {
+      if (caos.ambos) {
         span?.update({ metadata: { modelos_caidos_simulado: true } });
+        if (senales) senales.modelosCaidosSimulado = true;
         return { model: crearModeloCaido(this.respaldo) as unknown as ProcessInputStepResult["model"] };
       }
+      if (senales) senales.respaldo = { modelo: actual, causa: caos.causa };
       const marca = { metadata: { modelo_respaldo: true, modelo_usado: actual } };
       span?.update(marca);
       span?.findParent?.(SpanType.AGENT_RUN)?.update(marca);
@@ -156,7 +207,13 @@ export class FallbackModelo implements Processor<"fallback-modelo"> {
       return undefined;
     }
 
-    if (actual === this.principal && (await this.caos()).principal) {
+    const caos = actual === this.principal ? await this.caos() : null;
+    if (caos?.principal) {
+      if (caos.causa === "limite_uso" && !caos.ambos) {
+        span?.update({ metadata: { limite_gemini_simulado: true } });
+        const modelo = crearModeloCaido(this.principal, () => crearErrorLimiteUso(this.principal));
+        return { model: modelo as unknown as ProcessInputStepResult["model"] };
+      }
       span?.update({ metadata: { modelo_caido_simulado: true } });
       return { model: crearModeloCaido(this.principal) as unknown as ProcessInputStepResult["model"] };
     }

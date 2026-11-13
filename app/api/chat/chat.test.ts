@@ -1,10 +1,6 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Agent } from "@mastra/core/agent";
 import type { RequestContext } from "@mastra/core/request-context";
-import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,6 +17,7 @@ import { NOMBRE_COOKIE, firmarToken } from "@/lib/session";
 import { MENSAJES_BLOQUEO } from "@/src/mastra/processors/mensajes";
 import { modeloFalso } from "@/src/mastra/processors/pruebas-modelo";
 import type { Veredicto, VerificarEntrada } from "@/src/mastra/processors/verificacion-entrada";
+import { crearAlmacenamientoDePrueba } from "@/src/mastra/pruebas/almacenamiento";
 import { ejecutarTurno } from "@/src/mastra/turno";
 import { GET as historial } from "./historial/route";
 import { POST as nuevo } from "./nuevo/route";
@@ -68,7 +65,6 @@ vi.mock("@/src/mastra/turno", async (original) => {
 });
 
 let db: Awaited<ReturnType<typeof crearDbTemporal>>;
-let rutaMemoria: string;
 let memoria: Memory;
 let falso: ReturnType<typeof modeloFalso>;
 
@@ -159,14 +155,33 @@ const textoDe = (partes: Parte[]) =>
 
 const turnoMock = vi.mocked(ejecutarTurno);
 
+// Tipos de los eventos de salud anotados (semáforos del panel).
+async function tiposDeEventos(esperados: string[]) {
+  await vi.waitFor(async () => {
+    const r = await db.cliente.execute("SELECT tipo FROM eventos_salud ORDER BY id");
+    expect(r.rows.map((f) => f.tipo)).toEqual(esperados);
+  }, { timeout: 5000 });
+}
+
+// Filas de `turnos` (métricas del panel, PRD §15 G7) cuando ya se escribieron.
+async function filasTurnos(n = 1) {
+  let filas: Record<string, unknown>[] = [];
+  await vi.waitFor(async () => {
+    filas = (await db.cliente.execute("SELECT * FROM turnos ORDER BY id")).rows as unknown as Record<string, unknown>[];
+    expect(filas).toHaveLength(n);
+  }, { timeout: 5000 });
+  return filas;
+}
+
 beforeEach(async () => {
   vi.stubEnv("SESSION_SECRET", "secreto-de-prueba-0123456789");
   vi.stubEnv("MAX_MENSAJES_ASISTENTE", "30");
   vi.stubEnv("PRESUPUESTO_MAX_USD", "100");
   db = await crearDbTemporal();
   estado.fuente = db.fuente;
-  rutaMemoria = path.join(os.tmpdir(), `mastra-chat-${crypto.randomUUID()}.db`);
-  memoria = new Memory({ storage: new LibSQLStore({ id: `mem-${crypto.randomUUID()}`, url: `file:${rutaMemoria}` }) });
+  const { almacenamiento } = crearAlmacenamientoDePrueba("chat");
+  await almacenamiento.init();
+  memoria = new Memory({ storage: almacenamiento });
   estado.verificar = vi.fn<VerificarEntrada>(async () => PERMITIDO);
   estado.traceId = "traza-prueba-1";
   estado.fallarTurno = false;
@@ -178,7 +193,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   db.cerrar();
-  for (const s of ["", "-wal", "-shm"]) fs.rmSync(rutaMemoria + s, { force: true });
 });
 
 describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {
@@ -259,6 +273,11 @@ describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {
     const r2 = await chat(peticionChat(otro.cookie, mensajesUI("hola")));
     expect(r2.status).toBe(200);
     await r2.text();
+    // El freno queda en el semáforo «Entrada y límites».
+    await vi.waitFor(async () => {
+      const r3 = await db.cliente.execute("SELECT tipo FROM eventos_salud WHERE servicio = 'entrada'");
+      expect(r3.rows.map((f) => f.tipo)).toEqual(["limite_chat"]);
+    }, { timeout: 5000 });
   });
 
   it("mensaje 31 del mismo asistente → 429 tope (MAX_MENSAJES_ASISTENTE), sumando todas sus sesiones", async () => {
@@ -296,6 +315,7 @@ describe("POST /api/chat: validaciones previas (el agente no se llama)", () => {
     expect(turnoMock).not.toHaveBeenCalled();
     interruptores.limpiarCache();
     expect((await interruptores.obtenerTodos()).kill_switch).toBe("on");
+    await tiposDeEventos(["presupuesto_agotado"]);
   });
 
   it("sin PRESUPUESTO_MAX_USD no hay tope de coste", async () => {
@@ -379,6 +399,17 @@ describe("POST /api/chat: turno", () => {
     await vi.waitFor(async () => expect(await presupuesto.acumulado()).toBeCloseTo(esperado, 12), { timeout: 5000 });
   });
 
+  it("al terminar registra el turno en `turnos` (ok, duración, modelo y trace) sin datos personales", async () => {
+    const antes = Date.now();
+    const { cookie } = await preparar({ email: "zoraida.p@correo.ec", nombre: "Zoraida Paredes" });
+    await (await chat(peticionChat(cookie, mensajesUI("¿Qué es el harness?")))).text();
+    const [fila] = await filasTurnos();
+    expect(fila).toMatchObject({ resultado: "ok", tipo_falla: null, motivo_bloqueo: null, modelo: "gpt-6-luna", respaldo: 0, trace_id: "traza-prueba-1" });
+    expect(Number(fila.iniciado_ms)).toBeGreaterThanOrEqual(antes);
+    expect(Number(fila.duracion_ms)).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(fila)).not.toMatch(/zoraida|paredes|correo|harness/i);
+  });
+
   it("un bloqueo de entrada llega como data-tripwire con trace_id y no es una falla técnica", async () => {
     estado.verificar = vi.fn<VerificarEntrada>(async () => BLOQUEADO);
     const { asistente, cookie } = await preparar();
@@ -388,6 +419,7 @@ describe("POST /api/chat: turno", () => {
     expect(partes.find((p) => p.type === "finish")!.messageMetadata).toEqual({ trace_id: "traza-prueba-1" });
     expect(textoDe(partes)).toBe("");
     expect(await crearEscalamientos(db.fuente).contarPorAsistente(asistente.id)).toBe(0);
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "bloqueo", motivo_bloqueo: "fuera_de_alcance", tipo_falla: null });
   });
 
   it("si el modelo falla antes del primer token → mensaje fijo y escalamiento falla_tecnica con la pregunta", async () => {
@@ -413,6 +445,8 @@ describe("POST /api/chat: turno", () => {
         traceId: "traza-prueba-1",
       });
     }, { timeout: 5000 });
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "modelo", duracion_ms: null, modelo: null });
+    await tiposDeEventos(["modelos_caidos"]);
   });
 
   it("si el turno ni siquiera arranca → mensaje fijo y escalamiento falla_tecnica", async () => {
@@ -427,6 +461,20 @@ describe("POST /api/chat: turno", () => {
       const lista = await crearEscalamientos(db.fuente).listar();
       expect(lista.map((e) => [e.asistenteId, e.pregunta, e.motivo])).toEqual([[asistente.id, "¿Qué es un eval?", "falla_tecnica"]]);
     }, { timeout: 5000 });
+    expect((await filasTurnos())[0]).toMatchObject({ resultado: "falla", tipo_falla: "otro", trace_id: null });
+  });
+
+  it("falla cerrada del detector de inyección → evento rojo de guardrails con el trace id", async () => {
+    estado.verificar = vi.fn<VerificarEntrada>(async () => ({
+      ...BLOQUEADO,
+      motivo: "inyeccion",
+      metadata: { guardrail: "deteccion_inyeccion", motivo: "inyeccion", falla_detector: true, guardrails_entrada: "bloqueado" },
+    }));
+    const { cookie } = await preparar();
+    await (await chat(peticionChat(cookie, mensajesUI("hola")))).text();
+    await tiposDeEventos(["detector_falla_cerrada"]);
+    const r = await db.cliente.execute("SELECT trace_id FROM eventos_salud");
+    expect(r.rows[0].trace_id).toBe("traza-prueba-1");
   });
 
   it("no escribe emails ni nombres en los logs", async () => {

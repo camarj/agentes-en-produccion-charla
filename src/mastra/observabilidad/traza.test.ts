@@ -1,27 +1,23 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { createClient } from "@libsql/client";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
-import { LibSQLStore } from "@mastra/libsql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { rolAnonimo } from "@/lib/rol-anonimo";
 import { VERSION_INSTRUCCIONES, construirInstrucciones } from "../agents/instructions";
 import { modeloFalso } from "../processors/pruebas-modelo";
+import { crearAlmacenamientoDePrueba } from "../pruebas/almacenamiento";
 import { crearCitaLamina, crearFidelidad, crearPersonalizacion, crearSinErroresHerramienta } from "../scorers";
 import { crearBuscarLaminas } from "../tools/buscar-laminas";
 import { crearObservabilidad } from "./config";
 import { terminosDeNombres } from "./redaccion";
 
 // Prueba de punta a punta sin proveedor: un agente con modelo falso, la
-// observabilidad real del proyecto y un LibSQLStore temporal. Se buscan los
+// observabilidad real del proyecto y el almacenamiento Postgres de producción
+// (sobre PGlite, en un esquema propio). Se buscan los
 // datos personales en TODAS las filas guardadas (trazas y puntajes).
 const PERSONALES = [/zoraida/i, /paredes/i, /correo\.ec/i, /@/, /contadora/i, /facturas/i, /asistente-secreto/];
 
-const ruta = path.join(os.tmpdir(), `mastra-obs-${crypto.randomUUID()}.db`);
+const prueba = crearAlmacenamientoDePrueba("obs");
 let mastra: Mastra;
 let traceId: string;
 let respuesta: string;
@@ -37,7 +33,7 @@ async function esperar<T>(fn: () => Promise<T | null>, ms = 8000): Promise<T> {
 }
 
 beforeAll(async () => {
-  const store = new LibSQLStore({ id: "obs-test", url: `file:${ruta}` });
+  const store = prueba.almacenamiento;
   const modelo = modeloFalso("openai/gpt-6-luna", (_l, n) =>
     n === 1
       ? { herramienta: "buscar_laminas", entrada: { consulta: "harness" } }
@@ -114,7 +110,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await mastra?.observability.shutdown?.();
-  for (const s of ["", "-wal", "-shm"]) fs.rmSync(ruta + s, { force: true });
 });
 
 describe("traza real en storage (modelo falso)", () => {
@@ -140,6 +135,13 @@ describe("traza real en storage (modelo falso)", () => {
     expect(traza.spans.some((s) => s.spanType === "tool_call" && s.name.includes("buscar_laminas"))).toBe(true);
   });
 
+  it("no guarda un span por cada trozo del stream (model_chunk), pero sí la generación completa", async () => {
+    const obs = await mastra.getStorage()!.getStore("observability");
+    const traza = await obs!.getTrace({ traceId });
+    expect(traza!.spans.some((s) => s.spanType === "model_generation")).toBe(true);
+    expect(traza!.spans.filter((s) => s.spanType === "model_chunk")).toEqual([]);
+  });
+
   it("los puntajes quedan guardados: fidelidad < 0,5 por la cifra inventada", async () => {
     const scores = await mastra.getStorage()!.getStore("scores");
     const leer = async (scorerId: string) =>
@@ -153,33 +155,31 @@ describe("traza real en storage (modelo falso)", () => {
   });
 
   it("ninguna fila guardada contiene email, nombre, rol, descripción ni asistente_id", async () => {
-    const cliente = createClient({ url: `file:${ruta}` });
-    try {
-      const tablas = await cliente.execute("SELECT name FROM sqlite_master WHERE type = 'table'");
-      let filas = 0;
-      for (const t of tablas.rows.map((r) => String(r.name))) {
-        // Las columnas JSON se guardan como JSONB (blob): json() las devuelve como texto.
-        const columnas = (await cliente.execute(`PRAGMA table_info("${t}")`)).rows.map((c) => String(c.name));
-        const select = columnas
-          .map((c) => `CASE WHEN typeof("${c}") = 'blob' THEN json("${c}") ELSE "${c}" END AS "${c}"`)
-          .join(", ");
-        const r = await cliente.execute(`SELECT ${select} FROM "${t}"`);
-        for (const fila of r.rows) {
-          filas++;
-          const texto = JSON.stringify(fila);
-          // Única excepción aceptada: la fila de personalización guarda el rol y
-          // la descripción (redactada; su juez los necesita) en el prompt y el
-          // contexto; nunca nombre ni email.
-          const esPersonalizacion = t === "mastra_scorers" && fila.scorerId === "personalizacion";
-          const excepcion = ["contadora", "facturas"];
-          for (const patron of PERSONALES.filter((p) => !(esPersonalizacion && excepcion.includes(p.source)))) {
-            expect(texto, `tabla ${t}`).not.toMatch(patron);
-          }
+    const { pool, esquema } = prueba;
+    // Tablas del esquema (sin las particiones diarias: sus filas ya salen al leer la tabla madre).
+    const tablas = await pool.query(
+      `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = $1 AND c.relkind IN ('r', 'p') AND NOT c.relispartition`,
+      [esquema],
+    );
+    let filas = 0;
+    for (const t of tablas.rows.map((r) => String(r.name))) {
+      const r = await pool.query(`SELECT to_jsonb(t) AS fila FROM "${esquema}"."${t}" t`);
+      for (const { fila } of r.rows as { fila: Record<string, unknown> }[]) {
+        filas++;
+        const texto = JSON.stringify(fila);
+        // Única excepción aceptada: el puntaje de personalización guarda el rol
+        // y la descripción (redactada; su juez los necesita) en el prompt y el
+        // contexto; nunca nombre ni email.
+        const esPersonalizacion =
+          (t === "mastra_scorers" && fila.scorerId === "personalizacion") ||
+          (t === "mastra_score_events" && texto.includes('"personalizacion"'));
+        const excepcion = ["contadora", "facturas"];
+        for (const patron of PERSONALES.filter((p) => !(esPersonalizacion && excepcion.includes(p.source)))) {
+          expect(texto, `tabla ${t}`).not.toMatch(patron);
         }
       }
-      expect(filas).toBeGreaterThan(10);
-    } finally {
-      cliente.close();
     }
+    expect(filas).toBeGreaterThan(10);
   });
 });

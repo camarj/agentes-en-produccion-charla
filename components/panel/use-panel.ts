@@ -10,6 +10,7 @@ import {
   type MetricasPanel,
   type ValorOnOff,
 } from "@/lib/panel/tipos";
+import type { SaludPanel } from "@/lib/salud/catalogo";
 import { recargarSiHayVersionNueva } from "@/lib/version-app";
 
 // Datos del panel: se piden al abrir y luego cada 5 s, sin recargar la página.
@@ -43,6 +44,7 @@ export function usePanel({
   const [metricas, setMetricas] = useState<MetricasPanel | null>(null);
   const [interruptores, setInterruptores] = useState<EstadoInterruptores | null>(null);
   const [cola, setCola] = useState<FilaEscalamiento[] | null>(null);
+  const [salud, setSalud] = useState<SaludPanel | null>(null);
   const [sinConexion, setSinConexion] = useState(false);
   const [actualizadoEn, setActualizadoEn] = useState<string | null>(null);
   const enCurso = useRef(false);
@@ -55,16 +57,19 @@ export function usePanel({
     if (enCurso.current) return;
     enCurso.current = true;
     try {
-      const [m, i, c] = await Promise.all([
+      // La salud del sistema no frena al resto: si falla, se conserva la última.
+      const [m, i, c, s] = await Promise.all([
         leer<MetricasPanel>("/api/panel/metricas"),
         leer<EstadoInterruptores>("/api/panel/interruptores"),
         leer<{ escalamientos: FilaEscalamiento[] }>("/api/panel/escalamientos"),
+        leer<SaludPanel>("/api/panel/salud").catch(() => null),
       ]);
       const { seguroParaRecargar: seguro, alRecargar: recargar } = recarga.current;
       if (recargarSiHayVersionNueva({ servidor: m.version, seguro: seguro(), recargar })) return;
       setMetricas(m);
       setInterruptores(i);
       setCola(c.escalamientos);
+      if (s) setSalud(s);
       setSinConexion(false);
       setActualizadoEn(new Date().toISOString());
     } catch {
@@ -108,5 +113,5 @@ export function usePanel({
     [refrescar],
   );
 
-  return { metricas, interruptores, cola, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento };
+  return { metricas, interruptores, cola, salud, sinConexion, actualizadoEn, cambiarInterruptor, marcarEscalamiento };
 }

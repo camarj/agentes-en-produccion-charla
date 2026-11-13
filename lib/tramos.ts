@@ -5,7 +5,7 @@
 // - el panel del speaker: un botón por tramo, que guarda `lamina_actual` = `hasta`
 //   (la última lámina del tramo; así el agente puede hablar de todo el tramo).
 //
-// Si cambia la presentación, edita solo esta lista:
+// Si cambia una presentación, edita solo su lista:
 // - los tramos van en orden, sin huecos: el primero empieza en 1 y cada uno
 //   empieza en la lámina siguiente al `hasta` del anterior;
 // - el `hasta` del último es el total de láminas (el panel y la API lo usan
@@ -23,48 +23,73 @@ export interface Tramo {
   preguntas: readonly [string, string, string];
 }
 
-export const TRAMOS: readonly Tramo[] = [
-  {
-    id: "conceptos",
-    desde: 1,
-    hasta: 13,
-    nombre: "Conceptos",
-    preguntas: [
-      "¿Qué diferencia a un agente de un chatbot?",
-      "¿Qué es el loop de un agente?",
-      "¿Qué es el harness y por qué importa?",
-    ],
-  },
-  {
-    id: "decision-diseno",
-    desde: 14,
-    hasta: 32,
-    nombre: "Decisión y diseño",
-    preguntas: [
-      "¿Cómo decido si necesito un agente o basta un flujo fijo?",
-      "¿Qué debe incluir el PRD de un agente?",
-      "¿Qué es un patrón agéntico y cuáles se mostraron en la charla?",
-    ],
-  },
-  {
-    id: "produccion",
-    desde: 33,
-    hasta: 40,
-    nombre: "En producción",
-    preguntas: [
-      "¿Cómo hago que un agente sea resiliente cuando falla el modelo?",
-      "¿Qué guardrails conviene poner en un agente en producción?",
-      "¿Cómo uso evals y observabilidad para mejorar un agente?",
-    ],
-  },
-];
+// Una lista por presentación (los HTML están en la raíz del repo). La activa
+// se elige al construir la imagen con NEXT_PUBLIC_PRESENTACION (va también al
+// navegador): «devfest» (por defecto) o «espol». Decisión 2026-11-13 (PRD §15
+// G9): la presentación del DevFest se usa también en ESPOL.
+export type Presentacion = "espol" | "devfest";
+
+const PREGUNTAS_CONCEPTOS = [
+  "¿Qué es un agente de IA?",
+  "¿Qué es el loop de un agente?",
+  "¿Qué es el harness y por qué importa?",
+] as const;
+
+const PREGUNTAS_PRODUCCION = [
+  "¿Cómo hago que un agente sea resiliente cuando falla el modelo?",
+  "¿Qué guardrails conviene poner en un agente en producción?",
+  "¿Cómo uso evals y observabilidad para mejorar un agente?",
+] as const;
+
+export const TRAMOS_POR_PRESENTACION: Record<Presentacion, readonly Tramo[]> = {
+  // ESPOL 2026-11-25: agentes-produccion-espol-60min.html (26 láminas).
+  espol: [
+    { id: "conceptos", desde: 1, hasta: 11, nombre: "Conceptos", preguntas: PREGUNTAS_CONCEPTOS },
+    {
+      id: "decision-diseno",
+      desde: 12,
+      hasta: 19,
+      nombre: "Decisión y diseño",
+      preguntas: [
+        "¿Cómo decido si necesito un agente o basta un flujo fijo?",
+        "¿Qué debe incluir el PRD de un agente?",
+        "¿Qué es un patrón agéntico y cuáles se mostraron en la charla?",
+      ],
+    },
+    { id: "produccion", desde: 20, hasta: 26, nombre: "En producción", preguntas: PREGUNTAS_PRODUCCION },
+  ],
+  // DevFest Guayaquil 2026-12-05: agentes-produccion-devfest-60min.html (25
+  // láminas). No tiene la lámina «Qué es un patrón agéntico», solo los patrones.
+  devfest: [
+    { id: "conceptos", desde: 1, hasta: 8, nombre: "Conceptos", preguntas: PREGUNTAS_CONCEPTOS },
+    {
+      id: "decision-diseno",
+      desde: 9,
+      hasta: 17,
+      nombre: "Decisión y diseño",
+      preguntas: [
+        "¿Cómo decido si necesito un agente o basta un flujo fijo?",
+        "¿Qué debe incluir el PRD de un agente?",
+        "¿Qué patrones de agentes se mostraron en la charla?",
+      ],
+    },
+    { id: "produccion", desde: 18, hasta: 25, nombre: "En producción", preguntas: PREGUNTAS_PRODUCCION },
+  ],
+};
+
+// `process.env.NEXT_PUBLIC_PRESENTACION` va escrito literal: Next lo reemplaza al construir.
+export function presentacionActiva(valor: string | undefined = process.env.NEXT_PUBLIC_PRESENTACION): Presentacion {
+  return valor?.trim().toLowerCase() === "espol" ? "espol" : "devfest";
+}
+
+export const TRAMOS: readonly Tramo[] = TRAMOS_POR_PRESENTACION[presentacionActiva()];
 
 // Tramo de una lámina (número o texto, como se guarda `lamina_actual`).
 // Inválida o menor que la primera → primer tramo; mayor que la última → último.
-export function tramoDeLamina(lamina: unknown): Tramo {
+export function tramoDeLamina(lamina: unknown, tramos: readonly Tramo[] = TRAMOS): Tramo {
   const n = typeof lamina === "number" ? lamina : Number.parseInt(String(lamina ?? ""), 10);
-  const numero = Number.isFinite(n) ? n : TRAMOS[0].desde;
-  return TRAMOS.find((t) => numero <= t.hasta) ?? TRAMOS[TRAMOS.length - 1];
+  const numero = Number.isFinite(n) ? n : tramos[0].desde;
+  return tramos.find((t) => numero <= t.hasta) ?? tramos[tramos.length - 1];
 }
 
 // «Láminas 1–13 · Conceptos»

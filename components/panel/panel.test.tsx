@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EstadoInterruptores, FilaEscalamiento, MetricasPanel } from "@/lib/panel/tipos";
+import type { SaludPanel } from "@/lib/salud/catalogo";
 import { TRAMOS } from "@/lib/tramos";
 import { CLAVE_RECARGA, VERSION_APP } from "@/lib/version-app";
 import { Panel } from "./panel";
@@ -27,7 +28,7 @@ function metricasBase(): MetricasPanel {
       bloqueos: { total: 4, por_motivo: { fuera_de_alcance: 3, inyeccion: 1 } },
       turnos: 20,
       respaldo: { ultima_hora: 3, ultima_en: "2026-09-26T17:58:00.000Z" },
-      modelo_en_uso: { estado: "principal", modelo: "gpt-6-luna", en: "2026-09-26T17:59:00.000Z" },
+      modelo_en_uso: { estado: "principal", modelo: "gemini-3.8-flash", en: "2026-09-26T17:59:00.000Z" },
     },
     actualizado_en: "2026-09-26T18:00:00.000Z",
     version: VERSION_APP,
@@ -36,11 +37,27 @@ function metricasBase(): MetricasPanel {
 
 function interruptoresBase(): EstadoInterruptores {
   return {
-    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", kill_switch: "off", lamina_actual: 12 },
-    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, kill_switch: null },
+    valores: { herramienta_caida: "off", latencia_alta: "off", modelo_caido: "off", modelos_caidos: "off", limite_gemini: "off", base_datos_lenta: "off", kill_switch: "off", lamina_actual: 5 },
+    ultimas_activaciones: { herramienta_caida: "2026-09-26T17:40:00Z", latencia_alta: null, modelo_caido: null, modelos_caidos: null, limite_gemini: null, base_datos_lenta: null, kill_switch: null },
   };
 }
 
+function saludBase(): SaludPanel {
+  return {
+    servicios: [
+      { id: "gemini", nombre: "Gemini (principal)", semaforo: "ambar", detalle: "Límite de uso del proyecto alcanzado (429) → respaldo activo" },
+      { id: "openai", nombre: "OpenAI (respaldo)", semaforo: "verde", detalle: "En espera o respondiendo" },
+      { id: "busqueda", nombre: "Búsqueda de láminas", semaforo: "rojo", detalle: "buscar_laminas agotó 3 intentos" },
+    ],
+    eventos: [
+      { id: 3, hora: "2026-12-05T19:44:00.000Z", nivel: "ok", texto: "Gemini responde de nuevo", trace_id: null },
+      { id: 2, hora: "2026-12-05T19:43:05.000Z", nivel: "falla", texto: "buscar_laminas agotó 3 intentos", trace_id: "t-busqueda" },
+      { id: 1, hora: "2026-12-05T19:42:31.000Z", nivel: "aviso", texto: "Límite de uso del proyecto alcanzado (429) → respaldo activo ×12 en 1 min", trace_id: "t-429" },
+    ],
+  };
+}
+
+let salud: SaludPanel | null;
 let metricas: MetricasPanel;
 let estadoInt: EstadoInterruptores;
 let cola: FilaEscalamiento[];
@@ -49,6 +66,7 @@ const posts: Array<{ url: string; metodo: string; cuerpo: unknown }> = [];
 
 beforeEach(() => {
   metricas = metricasBase();
+  salud = saludBase();
   estadoInt = interruptoresBase();
   cola = [
     { id: 3, pregunta: "¿Qué pasó con [redactado]?", motivo: "falla_tecnica", rol_anonimo: "tecnico", estado: "pendiente", creado_en: "2026-09-26T17:50:00Z" },
@@ -71,6 +89,7 @@ beforeEach(() => {
     if (url === "/api/panel/metricas") return json(metricas);
     if (url === "/api/panel/interruptores") return json(estadoInt);
     if (url === "/api/panel/escalamientos") return json({ escalamientos: cola });
+    if (url === "/api/panel/salud") return salud ? json(salud) : json({ error: "error_interno" }, 500);
     return json({}, 404);
   });
   vi.stubGlobal("fetch", fetchSimulado);
@@ -106,6 +125,20 @@ describe("Panel del speaker", () => {
     expect(screen.getByText("Responde el modelo de respaldo")).toBeTruthy();
   });
 
+  it("muestra «Límite de Gemini» y «Base de datos lenta» con los demás interruptores y los puede encender", async () => {
+    await montar();
+    const caos = screen.getByRole("region", { name: "Interruptores de caos" });
+    expect(within(caos).getByText("El modelo principal falla con un 429 de límite de uso de Google y responde el respaldo.")).toBeTruthy();
+    expect(within(caos).getByText("Cada consulta a la base de datos tarda 1,5 s más.")).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(within(caos).getByRole("switch", { name: "Límite de Gemini" }));
+    await user.click(within(caos).getByRole("switch", { name: "Base de datos lenta" }));
+    expect(posts.map((p) => p.cuerpo)).toEqual([
+      { clave: "limite_gemini", valor: "on" },
+      { clave: "base_datos_lenta", valor: "on" },
+    ]);
+  });
+
   it("con «Modelo caído» apagado no aparece el aviso", async () => {
     await montar();
     expect(screen.queryByText("Responde el modelo de respaldo")).toBeNull();
@@ -123,8 +156,8 @@ describe("Panel del speaker", () => {
     expect(within(fallas).getByText("fallas de herramientas o modelos (12 h)")).toBeTruthy();
     expect(within(fallas).getByText("1 herramienta · 1 modelo · 2 tiempo agotado")).toBeTruthy();
     const modelo = metrica("Modelo en uso");
-    expect(within(modelo).getByText("gpt-6-luna")).toBeTruthy();
-    expect(within(modelo).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(modelo).getByText("gemini-3.8-flash")).toBeTruthy();
+    expect(within(modelo).getByText(/^última respuesta: gemini-3.8-flash a las \d{2}:\d{2}$/)).toBeTruthy();
     expect(within(modelo).getByText("respaldo: 3 en la última hora")).toBeTruthy();
     const bloqueos = metrica("Bloqueos de guardrails");
     expect(within(bloqueos).getByText("4")).toBeTruthy();
@@ -151,8 +184,45 @@ describe("Panel del speaker", () => {
     }
     // «Modelo en uso» sale de los interruptores: no depende de las trazas.
     expect(within(metrica("Modelo en uso")).getByText("última respuesta: —")).toBeTruthy();
-    expect(screen.getByText(/Trazas no disponibles por ahora/)).toBeTruthy();
+    expect(screen.getByText(/Métricas de turnos no disponibles por ahora/)).toBeTruthy();
     expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
+  });
+
+  it("salud del sistema: un semáforo por servicio y el registro en vivo con enlace «ver traza» a Studio", async () => {
+    await montar();
+    const seccion = await screen.findByRole("region", { name: "Salud del sistema" });
+    const gemini = within(seccion).getByRole("listitem", { name: /Gemini \(principal\)/ });
+    expect(gemini.getAttribute("aria-label")).toBe("Gemini (principal): ámbar");
+    expect(within(gemini).getByText("Límite de uso del proyecto alcanzado (429) → respaldo activo")).toBeTruthy();
+    expect(within(seccion).getByRole("listitem", { name: "Búsqueda de láminas: rojo" })).toBeTruthy();
+    expect(within(seccion).getByRole("listitem", { name: "OpenAI (respaldo): verde" })).toBeTruthy();
+
+    const registro = within(seccion).getByRole("list", { name: "Registro de eventos" });
+    const lineas = within(registro).getAllByRole("listitem");
+    expect(lineas.map((l) => l.querySelector("[data-texto]")?.textContent)).toEqual([
+      "Gemini responde de nuevo",
+      "buscar_laminas agotó 3 intentos",
+      "Límite de uso del proyecto alcanzado (429) → respaldo activo ×12 en 1 min",
+    ]);
+    expect(within(lineas[0]).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeTruthy();
+    expect(within(lineas[0]).queryByRole("link")).toBeNull();
+    const enlace = within(lineas[2]).getByRole("link", { name: "ver traza" });
+    expect(enlace.getAttribute("href")).toBe("https://studio.ejemplo.com/traces?traceId=t-429");
+    expect(enlace.getAttribute("target")).toBe("_blank");
+  });
+
+  it("sin STUDIO_URL el registro se ve igual pero sin «ver traza»", async () => {
+    await montar(null);
+    const seccion = await screen.findByRole("region", { name: "Salud del sistema" });
+    expect(within(seccion).getByText("buscar_laminas agotó 3 intentos", { selector: "[data-texto]" })).toBeTruthy();
+    expect(within(seccion).queryByRole("link", { name: "ver traza" })).toBeNull();
+  });
+
+  it("si la salud no responde, el resto del panel sigue al día", async () => {
+    salud = null;
+    await montar();
+    expect(within(metrica("Mensajes")).getByText("42")).toBeTruthy();
+    expect(screen.queryByText("Sin conexión con el servidor · reintentando")).toBeNull();
   });
 
   it("se actualiza cada 5 s sin recargar", async () => {
@@ -184,21 +254,21 @@ describe("Panel del speaker", () => {
     const valor = () => within(tarjeta()).getByTestId("modelo-en-uso");
 
     it("interruptores apagados: el principal en blanco, aunque la última respuesta fuera del respaldo", async () => {
-      obs().modelo_en_uso = { estado: "respaldo", modelo: "anthropic/claude-sonnet-5", en: "2026-09-26T17:59:00.000Z" };
+      obs().modelo_en_uso = { estado: "respaldo", modelo: "openai/gpt-6-luna", en: "2026-09-26T17:59:00.000Z" };
       obs().respaldo = { ultima_hora: 1, ultima_en: "2026-09-26T17:59:00.000Z" };
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       expect(valor().className).not.toMatch(/amber|red/);
-      expect(within(tarjeta()).getByText(/^última respuesta: claude-sonnet-5 a las \d{2}:\d{2}$/)).toBeTruthy();
+      expect(within(tarjeta()).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
       expect(within(tarjeta()).getByText("respaldo: 1 en la última hora")).toBeTruthy();
     });
 
-    it("«Modelo caído» encendido: «claude-sonnet-5 · respaldo» en ámbar antes de que nadie pregunte", async () => {
+    it("«Modelo caído» encendido: «gpt-6-luna · respaldo» en ámbar antes de que nadie pregunte", async () => {
       estadoInt.valores.modelo_caido = "on";
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna · respaldo"));
       expect(valor().className).toMatch(/amber/);
-      expect(within(tarjeta()).getByText(/^última respuesta: gpt-6-luna a las \d{2}:\d{2}$/)).toBeTruthy();
+      expect(within(tarjeta()).getByText(/^última respuesta: gemini-3.8-flash a las \d{2}:\d{2}$/)).toBeTruthy();
     });
 
     it("«Modelos caídos» encendido: «Sin modelo · falla técnica» en rojo", async () => {
@@ -212,11 +282,11 @@ describe("Panel del speaker", () => {
     it("cambia apenas se toca el interruptor, sin esperar una respuesta del agente", async () => {
       const u = userEvent.setup();
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
-      await waitFor(() => expect(valor().textContent).toBe("claude-sonnet-5 · respaldo"));
+      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna · respaldo"));
       await u.click(screen.getByRole("switch", { name: "Modelo caído" }));
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
     });
 
     it("sin turnos todavía o sin trazas: la última respuesta dice «—»", async () => {
@@ -227,7 +297,7 @@ describe("Panel del speaker", () => {
       metricas = metricasBase();
       metricas.observabilidad = { disponible: false };
       await montar();
-      await waitFor(() => expect(valor().textContent).toBe("gpt-6-luna"));
+      await waitFor(() => expect(valor().textContent).toBe("gemini-3.8-flash"));
       expect(within(tarjeta()).getByText("última respuesta: —")).toBeTruthy();
     });
 
@@ -241,7 +311,7 @@ describe("Panel del speaker", () => {
     const boton = (i: number) => screen.getByRole("button", { name: `Láminas ${TRAMOS[i].desde}–${TRAMOS[i].hasta} · ${TRAMOS[i].nombre}` });
 
     it("3 botones, uno por tramo; la lámina guardada marca su tramo", async () => {
-      estadoInt.valores.lamina_actual = 20;
+      estadoInt.valores.lamina_actual = 15;
       await montar();
       await waitFor(() => expect(boton(1).getAttribute("aria-pressed")).toBe("true"));
       expect(boton(0).getAttribute("aria-pressed")).toBe("false");
@@ -253,10 +323,10 @@ describe("Panel del speaker", () => {
       const u = userEvent.setup();
       await montar();
       await u.click(boton(2));
-      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 40 } });
+      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 25 } });
       await waitFor(() => expect(boton(2).getAttribute("aria-pressed")).toBe("true"));
       await u.click(boton(1));
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 32 });
+      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 17 });
     });
 
     it("elegir el tramo que ya está elegido no guarda nada", async () => {
@@ -287,7 +357,7 @@ describe("Panel del speaker", () => {
       const sw = await screen.findByRole("switch", { name: "Herramienta caída" });
       expect(sw.getAttribute("aria-checked")).toBe("false");
       expect(screen.getByText(/Última activación: \d{2}:\d{2}/)).toBeTruthy();
-      expect(screen.getAllByText("Nunca activado").length).toBe(3);
+      expect(screen.getAllByText("Nunca activado").length).toBe(5);
       expect(screen.getByRole("switch", { name: "Modelos caídos" })).toBeTruthy();
       expect(screen.getByText("Fallan el principal y el respaldo: falla técnica y escalamiento.")).toBeTruthy();
       await u.click(sw);

@@ -1,3 +1,4 @@
+import { senalesDe } from "@/lib/salud/senales";
 import { Agent, type ModelWithRetries } from "@mastra/core/agent";
 import type { MastraDBMessage } from "@mastra/core/memory";
 import type { MastraModelConfig } from "@mastra/core/llm";
@@ -157,6 +158,9 @@ export class AlcanceCharla implements Processor<"alcance-charla"> {
     if (!r.ok) {
       // Nunca se guarda el texto del mensaje: solo que se dejó pasar y por qué.
       registrarEnTraza(tracingContext, { alcance_falla_abierta: true, alcance_error: r.error });
+      // Semáforo de guardrails del panel (PRD §15 G7).
+      const senales = senalesDe(requestContext);
+      if (senales) senales.alcanceFallaAbierta = true;
       return messages;
     }
 

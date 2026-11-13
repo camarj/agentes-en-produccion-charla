@@ -9,7 +9,7 @@ process.env.VERSION_APP ||= new Date().toISOString();
 const nextConfig: NextConfig = {
   output: "standalone",
   env: { VERSION_APP: process.env.VERSION_APP },
-  serverExternalPackages: ["@mastra/*", "@libsql/client", "libsql"],
+  serverExternalPackages: ["@mastra/*", "pg"],
   // Service worker (guía de PWA de Next 16): nunca en caché HTTP, para que una
   // versión nueva llegue en la siguiente visita; y solo scripts del propio sitio.
   async headers() {

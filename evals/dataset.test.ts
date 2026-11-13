@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
-import { afterAll, describe, expect, it } from "vitest";
+import { crearAlmacenamientoDePrueba } from "@/src/mastra/pruebas/almacenamiento";
+import { describe, expect, it } from "vitest";
 import {
   GATES,
   ID_DATASET_STUDIO,
@@ -35,6 +35,12 @@ describe("cargarDataset", () => {
     expect(r02.laminas).toEqual([]);
     expect(r02.criterios).toEqual(["La traza muestra 3 intentos de buscar_laminas", "Responde en menos de 45 s en total"]);
     expect(datos.meta.notas).toMatch(/v1\.5\.0/);
+  });
+
+  it("v1.6.0 (DevFest, PRD §15 G5): R03 espera el respaldo OpenAI gpt-6-luna", () => {
+    expect(datos.meta.version).toBe("1.6.0");
+    expect(caso("R03").esperado.modelo_esperado).toBe("openai/gpt-6-luna");
+    expect(datos.meta.notas).toMatch(/v1\.6\.0/);
   });
 
   it("no queda la copia vieja del dataset en la raíz del repo", () => {
@@ -211,12 +217,9 @@ describe("sincronizarDataset (datasets falsos)", () => {
   });
 });
 
-describe("sincronizarDataset (Mastra + LibSQL reales)", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evals-dataset-"));
-  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-
+describe("sincronizarDataset (Mastra + Postgres reales)", () => {
   it("no duplica el dataset ni sube su versión si el JSON no cambió", async () => {
-    const mastra = new Mastra({ storage: new LibSQLStore({ id: "prueba", url: `file:${path.join(dir, "mastra.db")}` }) });
+    const mastra = new Mastra({ storage: crearAlmacenamientoDePrueba("evals_dataset").almacenamiento });
     const r1 = await sincronizarDataset(mastra.datasets as unknown as DatasetsMastra, datos);
     expect(r1.agregados).toHaveLength(40);
     const version1 = (await r1.dataset.getDetails()) as { version?: number };

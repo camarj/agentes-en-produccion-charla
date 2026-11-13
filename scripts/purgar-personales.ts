@@ -10,7 +10,7 @@ export interface ResultadoPurga {
 }
 
 // Borra los datos personales de charla.db en una sola transacción; hijos antes que padres.
-// No toca data/mastra.db.
+// No toca la memoria de Mastra.
 export async function purgarPersonales(fuente: FuenteDb): Promise<ResultadoPurga> {
   const c = await fuente();
   const [feedback, escalamientos, sesiones, asistentes] = await c.batch(
@@ -48,7 +48,7 @@ async function principal() {
       `Borrados: ${r.asistentes} asistentes, ${r.sesiones} sesiones, ${r.escalamientos} escalamientos, ${r.feedback} votos.`,
     );
   } finally {
-    cliente.close();
+    await cliente.close();
   }
 }
 

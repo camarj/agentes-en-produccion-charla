@@ -12,7 +12,7 @@ export const TITULO_CHARLA = "Cómo lograr que tus agentes sobrevivan a producci
 // Temas de la charla (tramos de lib/tramos.ts y grupos de láminas).
 export const TEMAS = {
   agent_basics: {
-    covers: "What an AI agent, an AI model or an LLM is; the agentic loop (observe, decide, act, check); how an agent differs from a chatbot; tools and memory as concepts.",
+    covers: "What an AI agent, an AI model or an LLM is; the agentic loop (observe, decide, act, check); tools and memory as concepts.",
     examples: ["¿Qué es un agente?", "¿Qué es un loop agéntico?", "Que es un llm?"],
   },
   harness: {

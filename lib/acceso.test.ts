@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  emailValido,
   guardarPerfil,
   identificar,
   MENSAJE_GENERICO,
@@ -30,19 +29,6 @@ describe("pantallaPara", () => {
   });
 });
 
-describe("emailValido", () => {
-  it("acepta correos normales, con espacios alrededor", () => {
-    expect(emailValido("andrea@ejemplo.com")).toBe(true);
-    expect(emailValido("  andrea.paz+charla@ejemplo.com.ec ")).toBe(true);
-  });
-
-  it("rechaza vacíos y formatos rotos", () => {
-    for (const malo of ["", "   ", "andrea", "andrea@", "@ejemplo.com", "andrea@ejemplo", "an drea@ejemplo.com"]) {
-      expect(emailValido(malo)).toBe(false);
-    }
-  });
-});
-
 describe("puedeContinuar", () => {
   it("exige un rol de al menos 2 caracteres sin contar espacios", () => {
     expect(puedeContinuar("")).toBe(false);
@@ -60,20 +46,20 @@ describe("cliente de la API", () => {
     expect(fetchSimulado).toHaveBeenCalledWith("/api/sesion", expect.objectContaining({ cache: "no-store" }));
   });
 
-  it("identificar envía el email recortado y devuelve el error de la API", async () => {
+  it("identificar envía la credencial de Google y devuelve el error de la API", async () => {
     const fetchSimulado = vi.fn().mockResolvedValue(respuestaJson(429, { error: "demasiados_intentos", mensaje: "Espera" }));
     vi.stubGlobal("fetch", fetchSimulado);
-    const r = await identificar("  andrea@ejemplo.com ");
+    const r = await identificar("cred-andrea");
     expect(r).toEqual({ ok: false, tipo: "http", status: 429, error: "demasiados_intentos", mensaje: "Espera" });
     const [url, init] = fetchSimulado.mock.calls[0];
     expect(url).toBe("/api/identificar");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body)).toEqual({ email: "andrea@ejemplo.com" });
+    expect(JSON.parse(init.body)).toEqual({ credencial: "cred-andrea" });
   });
 
   it("un fallo de red se informa como tipo 'red'", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
-    expect(await identificar("a@b.co")).toEqual({ ok: false, tipo: "red" });
+    expect(await identificar("cred")).toEqual({ ok: false, tipo: "red" });
   });
 
   it("una respuesta que no es JSON usa el mensaje genérico, nunca el texto técnico", async () => {

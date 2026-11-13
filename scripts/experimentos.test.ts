@@ -1,24 +1,18 @@
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { createClient, type Client } from "@libsql/client";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { crearAlmacenamientoDePrueba } from "../src/mastra/pruebas/almacenamiento";
 import { exportarExperimentos, revisarDatosPersonales, TABLAS, type Paquete } from "./exportar-experimentos";
-import { importarExperimentos, planificarImportacion, rutaRespaldo } from "./importar-experimentos";
+import { importarExperimentos, planificarImportacion } from "./importar-experimentos";
 
 const NUEVO_ID = "charla-v1-iteracion-2026-09-25";
 const NUEVO_NOMBRE = "charla-v1 · iteración 2026-09-25";
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "exp-import-"));
-afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
-
-// Base con las tablas de Mastra y un dataset `charla-v1` creado con su propio API
-// (así las columnas JSONB y los puntajes quedan como en data/mastra.db).
+// Esquema de Mastra en Postgres (PGlite) con un dataset `charla-v1` creado con
+// su propio API (así las columnas JSONB y los puntajes quedan como en producción).
 async function crearBase(nombre: string, { experimentos, items }: { experimentos: number; items: number }) {
-  const url = `file:${path.join(dir, nombre)}`;
-  const mastra = new Mastra({ storage: new LibSQLStore({ id: nombre, url }) });
+  const { almacenamiento, esquema, pool } = crearAlmacenamientoDePrueba(nombre);
+  const mastra = new Mastra({ storage: almacenamiento });
   const dataset = await mastra.datasets.create({ id: "charla-v1", name: "charla-v1", description: "casos" });
   const itemIds: string[] = [];
   for (let i = 0; i < items; i++) {
@@ -48,44 +42,37 @@ async function crearBase(nombre: string, { experimentos, items }: { experimentos
     await dataset.finalizeExperiment({ experimentId });
     experimentoIds.push(experimentId);
   }
-  const cliente = createClient({ url, concurrency: 1 });
   // Puntaje ajeno a los experimentos: no debe exportarse.
-  await cliente.execute(
-    "INSERT INTO mastra_scorers (id, scorerId, runId, score, source, entityType, createdAt, updatedAt) VALUES ('ajeno', 'fidelidad', 'otra-corrida', 1, 'LIVE', 'AGENT', '2026-09-24', '2026-09-24')",
+  await pool.query(
+    `INSERT INTO "${esquema}".mastra_scorers (id, "scorerId", "runId", scorer, score, input, output, "entityType", entity, "entityId", source, "createdAt", "updatedAt")
+     VALUES ('ajeno', 'fidelidad', 'otra-corrida', '{}', 1, '{}', '{}', 'AGENT', '{}', 'charla', 'LIVE', '2026-09-24', '2026-09-24')`,
   );
-  return { url, mastra, cliente, experimentoIds, itemIds };
+  return { almacenamiento, esquema, pool, mastra, experimentoIds, itemIds };
 }
+type Base = Awaited<ReturnType<typeof crearBase>>;
 
-async function volcar(cliente: Client) {
+const orden = (t: string) => (t === "mastra_dataset_items" ? `"id", "datasetVersion"` : `"id"`);
+
+async function volcar(b: Base) {
   const salida: Record<string, unknown[]> = {};
-  for (const t of TABLAS) salida[t] = (await cliente.execute(`SELECT * FROM ${t} ORDER BY rowid`)).rows.map((r) => ({ ...r }));
+  for (const t of TABLAS) salida[t] = (await b.pool.query(`SELECT * FROM "${b.esquema}".${t} ORDER BY ${orden(t)}`)).rows;
   return salida;
 }
 
-async function filasDe(cliente: Client, sql: string, args: string[] = []) {
-  return (await cliente.execute({ sql, args })).rows.map((r) => ({ ...r }));
-}
-
-describe("exportar e importar experimentos", () => {
-  let origen: Awaited<ReturnType<typeof crearBase>>;
-  let destino: Awaited<ReturnType<typeof crearBase>>;
+describe("exportar e importar experimentos (Postgres)", () => {
+  let origen: Base;
+  let destino: Base;
   let paquete: Paquete;
 
   beforeAll(async () => {
-    origen = await crearBase("origen.db", { experimentos: 6, items: 4 });
+    origen = await crearBase("origen", { experimentos: 6, items: 4 });
     // Una corrida vieja (antes del 25): queda fuera del filtro por fecha.
-    await origen.cliente.execute({
-      sql: "UPDATE mastra_experiments SET createdAt = '2026-09-20T10:00:00.000Z' WHERE id = ?",
-      args: [origen.experimentoIds[0]],
-    });
-    destino = await crearBase("destino.db", { experimentos: 1, items: 2 });
-    paquete = await exportarExperimentos(origen.cliente, { desde: "2026-09-25", nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE });
+    await origen.pool.query(`UPDATE "${origen.esquema}".mastra_experiments SET "createdAt" = '2026-09-20T10:00:00.000Z' WHERE id = $1`, [
+      origen.experimentoIds[0],
+    ]);
+    destino = await crearBase("destino", { experimentos: 1, items: 2 });
+    paquete = await exportarExperimentos(origen.pool, { esquema: origen.esquema, desde: "2026-09-25", nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE });
   }, 60_000);
-
-  afterAll(() => {
-    origen.cliente.close();
-    destino.cliente.close();
-  });
 
   it("exporta el dataset renombrado con sus versiones, items, experimentos, resultados y puntajes TEST", () => {
     const t = paquete.tablas;
@@ -105,57 +92,63 @@ describe("exportar e importar experimentos", () => {
     expect(paquete.meta.conteos).toMatchObject({ mastra_experiments: 5, mastra_experiment_results: 20, mastra_scorers: 40 });
     expect(paquete.meta.columnasJsonb.mastra_dataset_items).toContain("input");
     expect(JSON.parse(String(t.mastra_dataset_items[0].input))).toMatch(/^Pregunta/);
+    // Fechas como ISO en UTC, igual que los paquetes viejos.
+    expect(String(t.mastra_experiments[0].createdAt)).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
   it("filtra por ids explícitos y falla si no hay experimentos", async () => {
-    const uno = await exportarExperimentos(origen.cliente, { ids: [origen.experimentoIds[0]], nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE });
+    const uno = await exportarExperimentos(origen.pool, { esquema: origen.esquema, ids: [origen.experimentoIds[0]], nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE });
     expect(uno.tablas.mastra_experiments).toHaveLength(1);
-    await expect(exportarExperimentos(origen.cliente, { desde: "2099-01-01", nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE })).rejects.toThrow(/ningún experimento/);
+    await expect(
+      exportarExperimentos(origen.pool, { esquema: origen.esquema, desde: "2099-01-01", nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE }),
+    ).rejects.toThrow(/ningún experimento/);
   });
 
-  it("la simulación no cambia nada y no deja respaldo", async () => {
-    const antes = await volcar(destino.cliente);
-    const plan = await planificarImportacion(destino.cliente, paquete);
+  it("la simulación no cambia nada", async () => {
+    const antes = await volcar(destino);
+    const plan = await planificarImportacion(destino.pool, paquete, { esquema: destino.esquema });
     expect(plan.conflictos).toBe(0);
     expect(plan.tablas.mastra_experiments.nuevas).toBe(5);
     expect(plan.tablas.mastra_scorers.nuevas).toBe(40);
-    expect(await volcar(destino.cliente)).toEqual(antes);
-    expect(fs.readdirSync(dir).filter((f) => f.includes("respaldo"))).toEqual([]);
+    expect(await volcar(destino)).toEqual(antes);
   });
 
-  it("importa sin tocar el charla-v1 existente, respalda antes y es idempotente", async () => {
-    const charlaAntes = await volcar(destino.cliente);
-    const destinoRuta = destino.url.slice("file:".length);
-    const respaldo = rutaRespaldo(destinoRuta, new Date("2026-09-25T20:00:00Z"));
+  it("importa sin tocar el charla-v1 existente y es idempotente", async () => {
+    const charlaAntes = await volcar(destino);
 
-    const r = await importarExperimentos(destino.cliente, paquete, { respaldo });
+    const r = await importarExperimentos(destino.pool, paquete, { esquema: destino.esquema });
     expect(r.insertadas).toMatchObject({ mastra_datasets: 1, mastra_experiments: 5, mastra_experiment_results: 20, mastra_scorers: 40, mastra_dataset_items: 4 });
-    expect(fs.existsSync(respaldo)).toBe(true);
-    const copia = createClient({ url: `file:${respaldo}` });
-    expect((await copia.execute("SELECT count(*) AS n FROM mastra_experiments")).rows[0].n).toBe(1);
-    copia.close();
 
     // Las filas previas siguen idénticas.
-    const despues = await volcar(destino.cliente);
+    const despues = await volcar(destino);
     for (const t of TABLAS) {
       const previas = new Set(charlaAntes[t].map((f) => JSON.stringify(f)));
       expect(despues[t].filter((f) => previas.has(JSON.stringify(f)))).toHaveLength(charlaAntes[t].length);
     }
-    // Las columnas JSONB vuelven a quedar como JSONB.
-    const tipos = await filasDe(destino.cliente, "SELECT DISTINCT typeof(input) AS t FROM mastra_dataset_items WHERE datasetId = ?", [NUEVO_ID]);
-    expect(tipos).toEqual([{ t: "blob" }]);
+    // Las columnas JSONB vuelven a quedar como JSON (no como texto con comillas).
+    const tipos = await destino.pool.query(
+      `SELECT DISTINCT jsonb_typeof(input) AS t FROM "${destino.esquema}".mastra_dataset_items WHERE "datasetId" = $1`,
+      [NUEVO_ID],
+    );
+    expect(tipos.rows).toEqual([{ t: "string" }]);
     // Releer desde el destino da exactamente el mismo paquete.
-    const releido = await exportarExperimentos(destino.cliente, { datasetOrigen: NUEVO_ID, ids: paquete.meta.experimentos.map((e) => e.id), nuevoId: NUEVO_ID, nuevoNombre: NUEVO_NOMBRE });
+    const releido = await exportarExperimentos(destino.pool, {
+      esquema: destino.esquema,
+      datasetOrigen: NUEVO_ID,
+      ids: paquete.meta.experimentos.map((e) => e.id),
+      nuevoId: NUEVO_ID,
+      nuevoNombre: NUEVO_NOMBRE,
+    });
     expect(releido.tablas).toEqual(paquete.tablas);
 
     // Segunda vez: no duplica nada.
-    const otra = await importarExperimentos(destino.cliente, paquete, { respaldo: null });
+    const otra = await importarExperimentos(destino.pool, paquete, { esquema: destino.esquema });
     expect(Object.values(otra.insertadas).every((n) => n === 0)).toBe(true);
-    expect(await volcar(destino.cliente)).toEqual(despues);
+    expect(await volcar(destino)).toEqual(despues);
   }, 30_000);
 
   it("Mastra (lo que lee Studio) ve ambos datasets y los experimentos con sus puntajes", async () => {
-    const mastra = new Mastra({ storage: new LibSQLStore({ id: "lectura", url: destino.url }) });
+    const mastra = new Mastra({ storage: destino.almacenamiento });
     const { datasets } = await mastra.datasets.list();
     expect(datasets.map((d) => d.id).sort()).toEqual(["charla-v1", NUEVO_ID]);
     const nuevo = await mastra.datasets.get({ id: NUEVO_ID });
@@ -173,27 +166,44 @@ describe("exportar e importar experimentos", () => {
   }, 30_000);
 
   it("se niega a aplicar si un id del paquete ya pertenece a otro dataset", async () => {
-    const choque = await crearBase("choque.db", { experimentos: 0, items: 0 });
+    const choque = await crearBase("choque", { experimentos: 0, items: 0 });
     const exp = paquete.tablas.mastra_experiments[0];
-    await choque.cliente.execute({
-      sql: "INSERT INTO mastra_experiments (id, datasetId, status, totalItems, succeededCount, failedCount, skippedCount, createdAt, updatedAt) VALUES (?, 'charla-v1', 'completed', 0, 0, 0, 0, 'x', 'x')",
-      args: [String(exp.id)],
-    });
-    const antes = await volcar(choque.cliente);
-    const plan = await planificarImportacion(choque.cliente, paquete);
+    await choque.pool.query(
+      `INSERT INTO "${choque.esquema}".mastra_experiments (id, "datasetId", status, "totalItems", "succeededCount", "failedCount", "skippedCount", "createdAt", "updatedAt")
+       VALUES ($1, 'charla-v1', 'completed', 0, 0, 0, 0, now(), now())`,
+      [String(exp.id)],
+    );
+    const antes = await volcar(choque);
+    const plan = await planificarImportacion(choque.pool, paquete, { esquema: choque.esquema });
     expect(plan.conflictos).toBe(1);
-    await expect(importarExperimentos(choque.cliente, paquete, { respaldo: null })).rejects.toThrow(/conflicto/);
-    expect(await volcar(choque.cliente)).toEqual(antes);
-    choque.cliente.close();
+    await expect(importarExperimentos(choque.pool, paquete, { esquema: choque.esquema })).rejects.toThrow(/conflicto/);
+    expect(await volcar(choque)).toEqual(antes);
   }, 30_000);
 
   it("solo usa las columnas que existen en el destino y avisa cuáles descarta", async () => {
     const extra: Paquete = structuredClone(paquete);
     extra.meta.columnas.mastra_datasets = [...extra.meta.columnas.mastra_datasets, "columnaFutura"];
     extra.tablas.mastra_datasets[0] = { ...extra.tablas.mastra_datasets[0], id: "otro-dataset", columnaFutura: "x" };
-    const plan = await planificarImportacion(destino.cliente, extra);
+    const plan = await planificarImportacion(destino.pool, extra, { esquema: destino.esquema });
     expect(plan.tablas.mastra_datasets.columnasDescartadas).toEqual(["columnaFutura"]);
   });
+
+  it("importa el paquete real de la iteración (exportado de LibSQL) y Studio lo lee", async () => {
+    const real = JSON.parse(fs.readFileSync("evals/experimentos/iteracion-2026-09-25.json", "utf8")) as Paquete;
+    const base = await crearBase("real", { experimentos: 0, items: 0 });
+    const r = await importarExperimentos(base.pool, real, { esquema: base.esquema });
+    expect(r.insertadas).toMatchObject({
+      mastra_experiments: real.meta.conteos.mastra_experiments,
+      mastra_experiment_results: real.meta.conteos.mastra_experiment_results,
+      mastra_scorers: real.meta.conteos.mastra_scorers,
+    });
+    const nuevo = await base.mastra.datasets.get({ id: real.meta.destino.datasetId });
+    const { experiments } = await nuevo.listExperiments({ perPage: 50 });
+    expect(experiments).toHaveLength(real.meta.experimentos.length);
+    // Las columnas `…Z` (timestamptz) que LibSQL no tenía salen de su par sin Z.
+    const sinZ = await base.pool.query(`SELECT count(*)::int AS n FROM "${base.esquema}".mastra_experiments WHERE "createdAtZ" IS NULL`);
+    expect(sinZ.rows[0]).toEqual({ n: 0 });
+  }, 60_000);
 });
 
 describe("revisarDatosPersonales", () => {

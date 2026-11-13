@@ -1,13 +1,10 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { Agent } from "@mastra/core/agent";
 import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
+import { crearAlmacenamientoDePrueba } from "../pruebas/almacenamiento";
 import { Memory } from "@mastra/memory";
 import { RequestContext } from "@mastra/core/request-context";
 import { createTool } from "@mastra/core/tools";
+import { MODELO_PRINCIPAL, MODELO_RESPALDO } from "../modelos";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { crearEscalarPregunta } from "../tools/escalar-pregunta";
@@ -107,8 +104,8 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   it("el primer paso del modelo arranca sin esperar a los guardrails", async () => {
     const tiempos: number[] = [];
     const a = agenteCharlaFalso({
-      detectorModelo: detectorFalso(() => LIMPIO, 200),
-      clasificar: clasificadorFalso(() => ({ categoria: "concepto_ia", confianza: 0.9 }), 200),
+      detectorModelo: detectorFalso(() => LIMPIO, 600),
+      clasificar: clasificadorFalso(() => ({ categoria: "concepto_ia", confianza: 0.9 }), 600),
       principal: modeloFalso("openai/gpt-6-luna", () => {
         tiempos.push(performance.now());
         return { texto: "Un LLM es..." };
@@ -117,8 +114,11 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
     const inicio = performance.now();
     const r = await a.generate("¿Qué es un LLM?");
     expect(r.text).toBe("Un LLM es...");
-    expect(tiempos[0] - inicio).toBeLessThan(100);
-    expect(performance.now() - inicio).toBeLessThan(380);
+    // Límites a medio camino (holgura de cientos de ms con la máquina cargada):
+    // si esperara a los guardrails, el modelo arrancaría a los ≥600 ms; en
+    // serie el total sería ≥1200 ms.
+    expect(tiempos[0] - inicio).toBeLessThan(300);
+    expect(performance.now() - inicio).toBeLessThan(1000);
   });
 
   it("con herramientas: los guardrails corren una sola vez por mensaje y RespuestaFinal sigue funcionando", async () => {
@@ -137,7 +137,7 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   });
 
   it("bloqueado: escalar_pregunta no escribe y el turno no queda en la memoria", async () => {
-    const memoria = new Memory({ storage: new LibSQLStore({ id: "guardia-memoria", url: "file::memory:" }) });
+    const memoria = new Memory({ storage: crearAlmacenamientoDePrueba("guardia").almacenamiento });
     const repo = { crearConLimite: vi.fn(async () => ({ estado: "creado", id: 1 })), posicion: vi.fn(async () => 1) };
     const a = agenteCharlaFalso({
       detectorModelo: detectorFalso(() => INYECCION, 60),
@@ -171,8 +171,8 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   });
 
   it("con GuardiaEntrada delante, la caída simulada (modelo_caido) sigue pasando al respaldo", async () => {
-    const principal = modeloFalso("openai/gpt-6-luna", () => ({ texto: "desde openai" }));
-    const respaldo = modeloFalso("anthropic/claude-sonnet-5", () => ({ texto: "desde el respaldo" }));
+    const principal = modeloFalso(MODELO_PRINCIPAL, () => ({ texto: "desde el principal" }));
+    const respaldo = modeloFalso(MODELO_RESPALDO, () => ({ texto: "desde el respaldo" }));
     const g = guardia(detectorFalso(() => LIMPIO), clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })));
     const a = new Agent({
       id: "charla-prueba-caida",
@@ -207,22 +207,17 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
 
 describe("GuardiaEntrada: sin snapshots persistidos (regla 6)", () => {
   it("no quedan snapshots de workflows con el perfil ni el texto del usuario", async () => {
-    const ruta = path.join(os.tmpdir(), `guardrails-snap-${crypto.randomUUID()}.db`);
-    try {
-      const store = new LibSQLStore({ id: "snap-test", url: `file:${ruta}` });
-      const agente = agenteCharlaFalso({
-        detectorModelo: detectorFalso(() => LIMPIO),
-        clasificar: clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })),
-        principal: modeloFalso("openai/gpt-6-luna", () => ({ texto: "El harness..." })),
-      });
-      const mastra = new Mastra({ storage: store, agents: { charla: agente } });
-      const r = await mastra.getAgent("charla").generate("Soy Zoraida, mi correo es z@correo.ec. ¿Qué es el harness?");
-      expect(r.text).toBe("El harness...");
-      const flujos = await store.getStore("workflows");
-      const runs = await flujos!.listWorkflowRuns({});
-      expect(JSON.stringify(runs)).not.toContain("z@correo.ec");
-    } finally {
-      for (const sufijo of ["", "-wal", "-shm"]) fs.rmSync(ruta + sufijo, { force: true });
-    }
+    const store = crearAlmacenamientoDePrueba("snap").almacenamiento;
+    const agente = agenteCharlaFalso({
+      detectorModelo: detectorFalso(() => LIMPIO),
+      clasificar: clasificadorFalso(() => ({ categoria: "charla", confianza: 0.9 })),
+      principal: modeloFalso("openai/gpt-6-luna", () => ({ texto: "El harness..." })),
+    });
+    const mastra = new Mastra({ storage: store, agents: { charla: agente } });
+    const r = await mastra.getAgent("charla").generate("Soy Zoraida, mi correo es z@correo.ec. ¿Qué es el harness?");
+    expect(r.text).toBe("El harness...");
+    const flujos = await store.getStore("workflows");
+    const runs = await flujos!.listWorkflowRuns({});
+    expect(JSON.stringify(runs)).not.toContain("z@correo.ec");
   });
 });

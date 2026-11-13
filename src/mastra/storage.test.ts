@@ -1,104 +1,82 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { LibSQLStore } from "@mastra/libsql";
-import { ObservabilityStoragePostgresVNext } from "@mastra/pg";
+import { PostgresStore, ObservabilityStoragePostgresVNext } from "@mastra/pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_CONEXIONES_OBSERVABILIDAD, crearAlmacenamiento, crearPoolObservabilidad } from "./storage";
+import {
+  ESQUEMA_MASTRA,
+  MAX_CONEXIONES_MASTRA,
+  ObservabilidadPostgresTolerante,
+  crearAlmacenamiento,
+  crearPoolMastra,
+  esquemaMastra,
+} from "./storage";
+import { crearAlmacenamientoDePrueba } from "./pruebas/almacenamiento";
 
-// Ninguna prueba necesita Neon: con URL se construye el almacenamiento sin
-// conectarse (el pool de pg es perezoso) y la prueba de tolerancia usa un
-// puerto local cerrado.
-const archivos: string[] = [];
-function mastraDbTemporal() {
-  const ruta = path.join(os.tmpdir(), `mastra-storage-${crypto.randomUUID()}.db`);
-  archivos.push(ruta);
-  return `file:${ruta}`;
-}
-
+// Ninguna prueba necesita un Postgres real: el pool de pg es perezoso (no se
+// conecta al construirlo), la memoria corre en PGlite y la prueba de
+// tolerancia usa un puerto local cerrado.
 afterEach(() => {
   vi.restoreAllMocks();
-  for (const ruta of archivos.splice(0)) {
-    for (const extra of ["", "-wal", "-shm"]) fs.rmSync(`${ruta}${extra}`, { force: true });
-  }
 });
 
-const URL_FALSA = "postgresql://usuario:clave-secreta@127.0.0.1:1/observabilidad?sslmode=disable";
+const URL_FALSA = "postgresql://usuario:clave-secreta@127.0.0.1:1/charla?sslmode=disable";
 
 describe("crearAlmacenamiento", () => {
-  it("sin OBSERVABILIDAD_DATABASE_URL todo sigue en LibSQL (mastra.db)", async () => {
-    const store = crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal() });
-    expect(store).toBeInstanceOf(LibSQLStore);
-    const obs = await store.getStore("observability");
-    expect(obs).toBeDefined();
-    expect(obs).not.toBeInstanceOf(ObservabilityStoragePostgresVNext);
-  });
-
-  it("una URL vacía o con solo espacios también usa LibSQL", () => {
-    expect(crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal(), OBSERVABILIDAD_DATABASE_URL: "" })).toBeInstanceOf(
-      LibSQLStore,
-    );
-    expect(
-      crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal(), OBSERVABILIDAD_DATABASE_URL: "   " }),
-    ).toBeInstanceOf(LibSQLStore);
-  });
-
-  it("con URL solo la observabilidad va a Postgres; memoria, workflows y puntajes siguen en LibSQL", async () => {
-    const url = mastraDbTemporal();
-    const store = crearAlmacenamiento({ MASTRA_DB_URL: url, OBSERVABILIDAD_DATABASE_URL: URL_FALSA });
-    const soloLibsql = new LibSQLStore({ id: "referencia", url });
-
-    expect(store).not.toBeInstanceOf(LibSQLStore);
-    expect(await store.getStore("observability")).toBeInstanceOf(ObservabilityStoragePostgresVNext);
-    for (const dominio of ["memory", "workflows", "scores"] as const) {
+  it("todo Mastra va a Postgres (DATABASE_URL) en el esquema `mastra`: memoria, workflows, puntajes y trazas", async () => {
+    const store = crearAlmacenamiento({ entorno: { DATABASE_URL: URL_FALSA } });
+    expect(ESQUEMA_MASTRA).toBe("mastra");
+    for (const dominio of ["memory", "workflows", "scores", "datasets", "experiments"] as const) {
       const actual = await store.getStore(dominio);
-      const esperado = await soloLibsql.getStore(dominio);
-      expect(actual?.constructor.name, dominio).toBe(esperado?.constructor.name);
+      expect(actual?.constructor.name, dominio).toMatch(/PG$/);
     }
+    expect(await store.getStore("observability")).toBeInstanceOf(ObservabilityStoragePostgresVNext);
     await store.close();
   });
 
-  it("si Postgres no responde, iniciar no falla y la memoria en LibSQL sigue funcionando", async () => {
-    const errores = vi.spyOn(console, "error").mockImplementation(() => {});
-    const store = crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal(), OBSERVABILIDAD_DATABASE_URL: URL_FALSA });
+  it("el esquema se puede cambiar con MASTRA_ESQUEMA y se valida", () => {
+    expect(esquemaMastra({})).toBe("mastra");
+    expect(esquemaMastra({ MASTRA_ESQUEMA: " evals_x " })).toBe("evals_x");
+    expect(() => esquemaMastra({ MASTRA_ESQUEMA: 'mal"; drop' })).toThrow(/MASTRA_ESQUEMA/);
+  });
 
-    await expect(store.init()).resolves.toBeUndefined();
-
-    const memoria = (await store.getStore("memory"))!;
+  it("guarda la memoria en Postgres, en el esquema configurado", async () => {
+    const { almacenamiento, esquema, pool } = crearAlmacenamientoDePrueba("storage");
+    await almacenamiento.init();
+    const memoria = (await almacenamiento.getStore("memory"))!;
     const ahora = new Date();
-    await memoria.saveThread({
-      thread: { id: "hilo-1", resourceId: "recurso-1", title: "", createdAt: ahora, updatedAt: ahora },
-    });
-    expect((await memoria.getThreadById({ threadId: "hilo-1" }))?.id).toBe("hilo-1");
+    await memoria.saveThread({ thread: { id: "hilo-0", resourceId: "recurso-0", title: "", createdAt: ahora, updatedAt: ahora } });
 
-    // Se registra el fallo (en segundo plano), pero nunca la URL ni la clave.
-    await vi.waitFor(() => expect(errores).toHaveBeenCalled(), { timeout: 5000 });
+    const filas = await pool.query(`SELECT id FROM "${esquema}".mastra_threads`);
+    expect(filas.rows).toEqual([{ id: "hilo-0" }]);
+    const enPublic = await pool.query(
+      `SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'mastra_%'`,
+    );
+    expect(enPublic.rows[0]).toEqual({ n: 0 });
+  });
+
+  it("si Postgres no responde, iniciar la observabilidad no bloquea y no registra la URL ni la clave", async () => {
+    const errores = vi.spyOn(console, "error").mockImplementation(() => {});
+    const obs = new ObservabilidadPostgresTolerante({ pool: crearPoolMastra(URL_FALSA), schemaName: "mastra" });
+
+    await expect(obs.init()).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(errores).toHaveBeenCalled(), { timeout: 15_000 });
     const registrado = JSON.stringify(errores.mock.calls);
     expect(registrado).not.toContain("clave-secreta");
     expect(registrado).not.toContain("127.0.0.1");
-    await store.close();
   });
 });
 
-describe("preparación de Postgres en segundo plano", () => {
-  // Desde Ecuador, init() de Postgres tarda ~72 s aunque las tablas existan;
-  // el chat no puede esperarla.
-  it("init() no espera a Postgres: responde al instante y la memoria funciona", async () => {
+describe("preparación de la observabilidad en segundo plano", () => {
+  // La preparación de la observabilidad (tablas e índices particionados) es
+  // lenta; el chat no puede esperarla.
+  it("init() no espera a la observabilidad: responde y la memoria funciona", async () => {
     vi.spyOn(ObservabilityStoragePostgresVNext.prototype, "init").mockImplementation(() => new Promise(() => {}));
-    const store = crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal(), OBSERVABILIDAD_DATABASE_URL: URL_FALSA });
+    const { almacenamiento } = crearAlmacenamientoDePrueba("storage");
 
-    const t0 = Date.now();
-    await store.init();
-    expect(Date.now() - t0).toBeLessThan(2000);
+    await almacenamiento.init();
 
-    const memoria = (await store.getStore("memory"))!;
+    const memoria = (await almacenamiento.getStore("memory"))!;
     const ahora = new Date();
-    await memoria.saveThread({
-      thread: { id: "hilo-2", resourceId: "recurso-2", title: "", createdAt: ahora, updatedAt: ahora },
-    });
+    await memoria.saveThread({ thread: { id: "hilo-2", resourceId: "recurso-2", title: "", createdAt: ahora, updatedAt: ahora } });
     expect((await memoria.getThreadById({ threadId: "hilo-2" }))?.id).toBe("hilo-2");
-    await store.close();
   });
 
   it("las escrituras esperan a la preparación y, si falló, la reintentan una vez antes de escribir", async () => {
@@ -107,10 +85,9 @@ describe("preparación de Postgres en segundo plano", () => {
       .spyOn(ObservabilityStoragePostgresVNext.prototype, "init")
       .mockRejectedValueOnce(new Error("sin red"))
       .mockResolvedValue(undefined);
-    const escribir = vi
-      .spyOn(ObservabilityStoragePostgresVNext.prototype, "batchCreateFeedback")
-      .mockResolvedValue(undefined);
-    const store = crearAlmacenamiento({ MASTRA_DB_URL: mastraDbTemporal(), OBSERVABILIDAD_DATABASE_URL: URL_FALSA });
+    const escribir = vi.spyOn(ObservabilityStoragePostgresVNext.prototype, "batchCreateFeedback").mockResolvedValue(undefined);
+    vi.spyOn(PostgresStore.prototype, "init").mockResolvedValue(undefined);
+    const store = crearAlmacenamiento({ entorno: { DATABASE_URL: URL_FALSA } });
     const obs = (await store.getStore("observability"))!;
 
     await store.init();
@@ -128,12 +105,14 @@ describe("preparación de Postgres en segundo plano", () => {
   });
 });
 
-describe("crearPoolObservabilidad", () => {
-  it("usa un pool pequeño (lo comparten web y Studio) y no se cae si una conexión inactiva muere", async () => {
+describe("crearPoolMastra", () => {
+  it("usa un pool pequeño (Cloud SQL limita las conexiones) y no se cae si una conexión inactiva muere", async () => {
     const errores = vi.spyOn(console, "error").mockImplementation(() => {});
-    const pool = crearPoolObservabilidad(URL_FALSA);
-    expect(MAX_CONEXIONES_OBSERVABILIDAD).toBeLessThanOrEqual(5);
-    expect(pool.options.max).toBe(MAX_CONEXIONES_OBSERVABILIDAD);
+    const pool = crearPoolMastra(URL_FALSA);
+    // Cloud SQL quedó con max_connections=200 (2026-11-12): hasta 6 copias de
+    // web + Studio, cada una con 10 de la app + las de Mastra, deben caber con margen.
+    expect(7 * (10 + MAX_CONEXIONES_MASTRA)).toBeLessThanOrEqual(180);
+    expect(pool.options.max).toBe(MAX_CONEXIONES_MASTRA);
     expect(pool.options.connectionTimeoutMillis).toBeGreaterThan(0);
 
     // Sin un manejador, un 'error' de una conexión inactiva tumbaría el proceso.

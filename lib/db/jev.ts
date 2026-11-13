@@ -1,7 +1,6 @@
-import type { Row } from "@libsql/client";
 import type { AnalisisJev } from "@/lib/jev/resultado";
 import type { Intencion, Tema } from "@/lib/jev/preguntas";
-import { db, type FuenteDb } from "./client";
+import { db, type Fila as Row, type FuenteDb } from "./client";
 import { numero, texto, textoONulo } from "./tipos";
 
 // Análisis de Jev por turno (migración 005). Idempotente: la clave es el traceId.
@@ -61,7 +60,7 @@ export function crearJev(fuente: FuenteDb = db) {
   async function guardar(a: AnalisisJev): Promise<boolean> {
     const c = await fuente();
     const r = await c.execute({
-      sql: `INSERT OR IGNORE INTO jev_analisis (${COLUMNAS.join(", ")}) VALUES (${COLUMNAS.map(() => "?").join(", ")})`,
+      sql: `INSERT INTO jev_analisis (${COLUMNAS.join(", ")}) VALUES (${COLUMNAS.map(() => "?").join(", ")}) ON CONFLICT (trace_id) DO NOTHING`,
       args: [
         a.traceId,
         a.turnoEn,

@@ -13,10 +13,14 @@ export interface PrecioModelo {
   salida: number;
 }
 
-// Precios de lista estándar (verificados el 2026-09-23):
+// Precios de lista estándar (verificados el 2026-09-23; Gemini el 2026-11-10):
+// - gemini-3.8-flash: precio de introducción de Vertex, endpoint `global`
+//   (cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing).
+//   Vale hasta el 2026-12-31; desde el 2027-01-01 sube a 1,50 / 0,15 / 7,50.
 // - gpt-6-luna: developers.openai.com/api/docs/models/gpt-6-luna
 // - claude-sonnet-5 y claude-haiku-4-5: precios de Anthropic (lectura en caché = 10 % de la entrada).
 export const PRECIOS_USD_POR_MILLON: Record<string, PrecioModelo> = {
+  "gemini-3.8-flash": { entrada: 0.75, entradaCache: 0.075, salida: 3.75 },
   "gpt-6-luna": { entrada: 0.1, entradaCache: 0.01, salida: 0.5 },
   "claude-sonnet-5": { entrada: 2, entradaCache: 0.2, salida: 10 },
   "claude-haiku-4-5": { entrada: 1, entradaCache: 0.1, salida: 5 },
@@ -98,7 +102,7 @@ export function crearPresupuesto(fuente: FuenteDb = db) {
     const c = await fuente();
     await c.execute({
       sql: `INSERT INTO presupuesto (id, coste_usd) VALUES (1, ?)
-        ON CONFLICT(id) DO UPDATE SET coste_usd = coste_usd + excluded.coste_usd, actualizado_en = datetime('now')`,
+        ON CONFLICT(id) DO UPDATE SET coste_usd = presupuesto.coste_usd + excluded.coste_usd, actualizado_en = ahora_utc()`,
       args: [usd],
     });
   }
