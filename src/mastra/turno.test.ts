@@ -139,7 +139,7 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
     for await (const c of directo.fullStream) esperado.push(c);
 
     const { agente, tiempos } = agentePrueba({});
-    const { verificar, marca } = verificadorFalso(PERMITIDO, 150);
+    const { verificar, marca } = verificadorFalso(PERMITIDO, 500);
     const turno = await ejecutarTurno({ agente, mensaje: "¿Qué es el harness?", requestContext: contexto(), verificar });
     const partes = await leerConTiempos(turno.fullStream);
 
@@ -159,11 +159,11 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
       agente,
       mensaje: "¿Qué es el harness?",
       requestContext: contexto(),
-      verificar: verificadorFalso(PERMITIDO, 120).verificar,
+      verificar: verificadorFalso(PERMITIDO, 500).verificar,
     });
     await consumirTurno(turno);
     const m = turno.metricas;
-    expect(m.veredictoMs).toBeGreaterThanOrEqual(110);
+    expect(m.veredictoMs).toBeGreaterThanOrEqual(480);
     expect(m.primerTextoAgenteMs).toBeLessThan(m.veredictoMs!);
     expect(m.primerTextoEntregadoMs).toBeGreaterThanOrEqual(m.veredictoMs!);
     // Lo que el guardrail retrasó el primer texto.
@@ -172,16 +172,17 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
 
   it("guardrail más lento que el primer paso: el primer paso empieza sin esperarlo", async () => {
     const { agente, tiempos } = agentePrueba({ demoraModeloMs: 30 });
-    const { verificar, marca } = verificadorFalso(PERMITIDO, 200);
-    const inicio = performance.now();
+    const { verificar, marca } = verificadorFalso(PERMITIDO, 500);
     const turno = await ejecutarTurno({ agente, mensaje: "¿Qué es el harness?", requestContext: contexto(), verificar });
     const r = await consumirTurno(turno);
     expect(r.bloqueado).toBe(false);
     expect(r.texto).toBe("El harness es todo lo que rodea al modelo (lámina 11).");
-    expect(tiempos[0] - inicio).toBeLessThan(100);
+    // Se comprueba por orden, no con un reloj fijo (que falla con la máquina
+    // cargada): los dos pasos del modelo ocurrieron mientras el guardrail
+    // seguía revisando, así que la latencia total es la del guardrail, no la suma.
+    expect(tiempos.length).toBe(2);
     expect(tiempos[0]).toBeLessThan(marca.resuelto);
-    // Latencia total ≈ la del guardrail, no la suma.
-    expect(performance.now() - inicio).toBeLessThan(200 + 30 * 2 + 120);
+    expect(tiempos[1]).toBeLessThan(marca.resuelto);
   });
 
   it("bloqueado: solo el mensaje fijo, el agente se detiene, no escala y no queda nada en la memoria", async () => {
@@ -219,7 +220,7 @@ describe("ejecutarTurno: guardrails de entrada en paralelo con el agente", () =>
     const { agente, tiempos } = agentePrueba({ memoria });
     const { verificar, marca } = verificadorFalso(
       { ...BLOQUEO_INYECCION, motivo: "fuera_de_alcance", mensaje: MENSAJES_BLOQUEO.fuera_de_alcance, guardrail: "alcance_charla", processorId: "alcance-charla", metadata: { guardrail: "alcance_charla", motivo: "fuera_de_alcance" } },
-      150,
+      500,
     );
     const turno = await ejecutarTurno({
       agente,

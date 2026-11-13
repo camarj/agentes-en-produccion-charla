@@ -104,8 +104,8 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
   it("el primer paso del modelo arranca sin esperar a los guardrails", async () => {
     const tiempos: number[] = [];
     const a = agenteCharlaFalso({
-      detectorModelo: detectorFalso(() => LIMPIO, 200),
-      clasificar: clasificadorFalso(() => ({ categoria: "concepto_ia", confianza: 0.9 }), 200),
+      detectorModelo: detectorFalso(() => LIMPIO, 600),
+      clasificar: clasificadorFalso(() => ({ categoria: "concepto_ia", confianza: 0.9 }), 600),
       principal: modeloFalso("openai/gpt-6-luna", () => {
         tiempos.push(performance.now());
         return { texto: "Un LLM es..." };
@@ -114,8 +114,11 @@ describe("GuardiaEntrada: agente usado directamente (Studio)", () => {
     const inicio = performance.now();
     const r = await a.generate("¿Qué es un LLM?");
     expect(r.text).toBe("Un LLM es...");
-    expect(tiempos[0] - inicio).toBeLessThan(100);
-    expect(performance.now() - inicio).toBeLessThan(380);
+    // Límites a medio camino (holgura de cientos de ms con la máquina cargada):
+    // si esperara a los guardrails, el modelo arrancaría a los ≥600 ms; en
+    // serie el total sería ≥1200 ms.
+    expect(tiempos[0] - inicio).toBeLessThan(300);
+    expect(performance.now() - inicio).toBeLessThan(1000);
   });
 
   it("con herramientas: los guardrails corren una sola vez por mensaje y RespuestaFinal sigue funcionando", async () => {
