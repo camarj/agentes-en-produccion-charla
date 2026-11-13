@@ -16,7 +16,7 @@ Guía para publicar, operar y apagar la demo. Todo corre en Google Cloud: el mod
 | Recurso | Nombre | Detalle |
 | --- | --- | --- |
 | App pública | Cloud Run `charla-web` | `https://charla.codetrain.cloud`. Comando `web`, puerto 8080. 2 CPU, 2 GiB, CPU siempre asignada. **Mínimo 1 y máximo 6 copias, 25 pedidos simultáneos por copia** (ver §7) |
-| Studio | Cloud Run `charla-studio` | `https://charla-studio-20032347418.us-east1.run.app`. Comando `studio`. 1 CPU, 1 GiB. Protegido con **IAP**: solo entran las cuentas de Google autorizadas (hoy `raulj.camacho@gmail.com` e `inteliside.mail@gmail.com`). Se agregan personas en la consola: Seguridad → Identity-Aware Proxy → `charla-studio` → Agregar principal con el rol «Usuario de aplicación web protegida con IAP» |
+| Studio | Cloud Run `charla-studio` | `https://charla-studio-20032347418.us-east1.run.app`. Comando `studio`. 1 CPU, 1 GiB. Protegido con **IAP**: solo entran las cuentas de Google autorizadas (la lista está en la consola, no en el repo). Se agregan personas en la consola: Seguridad → Identity-Aware Proxy → `charla-studio` → Agregar principal con el rol «Usuario de aplicación web protegida con IAP» |
 | Base de datos | Cloud SQL `charla-db` | PostgreSQL 17, `db-custom-1-3840`, `us-east1`, flag `max_connections=200`. Base `charla`, usuario `charla`. Conexión `eng-particle-514416-q3:us-east1:charla-db`. Las tablas de la app van en `public` y las de Mastra (memoria, puntajes, experimentos, trazas) en el esquema `mastra` |
 | Imágenes | Artifact Registry `charla` | `us-east1-docker.pkg.dev/eng-particle-514416-q3/charla/app:<sha>` |
 | Secretos | Secret Manager | `database-url`, `openai-api-key`, `anthropic-api-key`, `typesafe-api-key`, `panel-password`, `session-secret` |
