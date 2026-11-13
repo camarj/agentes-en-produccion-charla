@@ -1,13 +1,13 @@
 # Construye la imagen de la demo en Cloud Build y la guarda en Artifact Registry.
 # Uso: gcloud builds submit --config cloudbuild.yaml --substitutions=_TAG=<sha>
 # NEXT_PUBLIC_GOOGLE_CLIENT_ID se incrusta en el bundle del navegador (no es secreto).
-# _PRESENTACION elige las partes de la charla (lib/tramos.ts): espol (por defecto)
-# o devfest. Para el DevFest: --substitutions=_TAG=<sha>,_PRESENTACION=devfest
+# _PRESENTACION elige las partes de la charla (lib/tramos.ts): devfest (por
+# defecto, se usa en ESPOL y en el DevFest) o espol (presentación anterior).
 substitutions:
   _REGION: us-east1
   _REPO: charla
   _TAG: latest
-  _PRESENTACION: espol
+  _PRESENTACION: devfest
   _GOOGLE_CLIENT_ID: 20032347418-fqc802niqkatovc3pnhlcvnd5niicmib.apps.googleusercontent.com
 steps:
   - name: gcr.io/cloud-builders/docker

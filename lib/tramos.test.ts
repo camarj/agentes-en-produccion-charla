@@ -49,29 +49,30 @@ describe("TRAMOS_POR_PRESENTACION", () => {
 });
 
 describe("presentacionActiva", () => {
-  it("ESPOL por defecto; «devfest» elige DevFest; cualquier otro valor cae en ESPOL", () => {
-    expect(presentacionActiva(undefined)).toBe("espol");
+  it("DevFest por defecto (se usa en ESPOL y DevFest, PRD §15 G9); «espol» elige ESPOL; cualquier otro valor cae en DevFest", () => {
+    expect(presentacionActiva(undefined)).toBe("devfest");
     expect(presentacionActiva("devfest")).toBe("devfest");
     expect(presentacionActiva(" DevFest ")).toBe("devfest");
     expect(presentacionActiva("espol")).toBe("espol");
-    expect(presentacionActiva("otra")).toBe("espol");
+    expect(presentacionActiva(" ESPOL ")).toBe("espol");
+    expect(presentacionActiva("otra")).toBe("devfest");
   });
 
-  it("sin NEXT_PUBLIC_PRESENTACION, TRAMOS son los de ESPOL y el panel llega hasta la 26", () => {
-    expect(TRAMOS).toBe(TRAMOS_POR_PRESENTACION.espol);
+  it("sin NEXT_PUBLIC_PRESENTACION, TRAMOS son los de DevFest y el panel llega hasta la 25", () => {
+    expect(TRAMOS).toBe(TRAMOS_POR_PRESENTACION.devfest);
     expect(LAMINA_MIN).toBe(1);
-    expect(LAMINA_MAX).toBe(26);
+    expect(LAMINA_MAX).toBe(25);
   });
 });
 
 describe("tramoDeLamina", () => {
   it("cada lámina cae en su tramo (bordes incluidos)", () => {
     expect(tramoDeLamina(1)).toBe(TRAMOS[0]);
-    expect(tramoDeLamina(11)).toBe(TRAMOS[0]);
-    expect(tramoDeLamina(12)).toBe(TRAMOS[1]);
-    expect(tramoDeLamina(19)).toBe(TRAMOS[1]);
-    expect(tramoDeLamina(20)).toBe(TRAMOS[2]);
-    expect(tramoDeLamina(26)).toBe(TRAMOS[2]);
+    expect(tramoDeLamina(8)).toBe(TRAMOS[0]);
+    expect(tramoDeLamina(9)).toBe(TRAMOS[1]);
+    expect(tramoDeLamina(17)).toBe(TRAMOS[1]);
+    expect(tramoDeLamina(18)).toBe(TRAMOS[2]);
+    expect(tramoDeLamina(25)).toBe(TRAMOS[2]);
   });
 
   it("acepta texto (así se guarda) y lleva lo inválido o fuera de rango al tramo más cercano", () => {
@@ -82,17 +83,17 @@ describe("tramoDeLamina", () => {
     expect(tramoDeLamina(null)).toBe(TRAMOS[0]);
   });
 
-  it("con otra lista de tramos (DevFest) usa esa lista", () => {
-    const d = TRAMOS_POR_PRESENTACION.devfest;
-    expect(tramoDeLamina(8, d)).toBe(d[0]);
-    expect(tramoDeLamina(9, d)).toBe(d[1]);
-    expect(tramoDeLamina(18, d)).toBe(d[2]);
+  it("con otra lista de tramos (ESPOL) usa esa lista", () => {
+    const e = TRAMOS_POR_PRESENTACION.espol;
+    expect(tramoDeLamina(11, e)).toBe(e[0]);
+    expect(tramoDeLamina(12, e)).toBe(e[1]);
+    expect(tramoDeLamina(20, e)).toBe(e[2]);
   });
 });
 
 describe("etiquetaTramo", () => {
-  it("«Láminas 1–11 · Conceptos»", () => {
-    expect(etiquetaTramo(TRAMOS[0])).toBe("Láminas 1–11 · Conceptos");
-    expect(etiquetaTramo(TRAMOS[2])).toBe("Láminas 20–26 · En producción");
+  it("«Láminas 1–8 · Conceptos»", () => {
+    expect(etiquetaTramo(TRAMOS[0])).toBe("Láminas 1–8 · Conceptos");
+    expect(etiquetaTramo(TRAMOS[2])).toBe("Láminas 18–25 · En producción");
   });
 });

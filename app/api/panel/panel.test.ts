@@ -239,14 +239,14 @@ describe("/api/panel/interruptores", () => {
     expect(apagado.ultimas_activaciones.kill_switch).not.toBeNull();
   });
 
-  it.each([1, 26, "12", 20])("lámina %s válida", async (valor) => {
+  it.each([1, 25, "12", 20])("lámina %s válida", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(200);
     expect((await r.json()).valores.lamina_actual).toBe(Number(valor));
     expect((await interruptores.obtenerTodos()).lamina_actual).toBe(String(Number(valor)));
   });
 
-  it.each([0, 27, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
+  it.each([0, 26, -1, 1.5, "abc", "", null, "12a"])("lámina %s fuera de rango → 400", async (valor) => {
     const r = await cambiar({ clave: "lamina_actual", valor });
     expect(r.status).toBe(400);
     expect((await r.json()).error).toBe("interruptor_invalido");

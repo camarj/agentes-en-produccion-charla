@@ -323,10 +323,10 @@ describe("Panel del speaker", () => {
       const u = userEvent.setup();
       await montar();
       await u.click(boton(2));
-      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 26 } });
+      expect(posts.at(-1)).toMatchObject({ url: "/api/panel/interruptores", cuerpo: { clave: "lamina_actual", valor: 25 } });
       await waitFor(() => expect(boton(2).getAttribute("aria-pressed")).toBe("true"));
       await u.click(boton(1));
-      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 19 });
+      expect(posts.at(-1)?.cuerpo).toEqual({ clave: "lamina_actual", valor: 17 });
     });
 
     it("elegir el tramo que ya está elegido no guarda nada", async () => {

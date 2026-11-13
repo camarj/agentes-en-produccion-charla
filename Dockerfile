@@ -40,7 +40,7 @@ COPY --chown=node:node . .
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 # Presentación activa (lib/tramos.ts): «espol» (por defecto) o «devfest».
-ARG NEXT_PUBLIC_PRESENTACION="espol"
+ARG NEXT_PUBLIC_PRESENTACION="devfest"
 ENV NEXT_PUBLIC_PRESENTACION=$NEXT_PUBLIC_PRESENTACION
 RUN pnpm build \
  && cp -r public .next/standalone/public \

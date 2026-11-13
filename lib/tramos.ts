@@ -25,7 +25,8 @@ export interface Tramo {
 
 // Una lista por presentación (los HTML están en la raíz del repo). La activa
 // se elige al construir la imagen con NEXT_PUBLIC_PRESENTACION (va también al
-// navegador): «espol» (por defecto) o «devfest».
+// navegador): «devfest» (por defecto) o «espol». Decisión 2026-11-13 (PRD §15
+// G9): la presentación del DevFest se usa también en ESPOL.
 export type Presentacion = "espol" | "devfest";
 
 const PREGUNTAS_CONCEPTOS = [
@@ -78,7 +79,7 @@ export const TRAMOS_POR_PRESENTACION: Record<Presentacion, readonly Tramo[]> = {
 
 // `process.env.NEXT_PUBLIC_PRESENTACION` va escrito literal: Next lo reemplaza al construir.
 export function presentacionActiva(valor: string | undefined = process.env.NEXT_PUBLIC_PRESENTACION): Presentacion {
-  return valor?.trim().toLowerCase() === "devfest" ? "devfest" : "espol";
+  return valor?.trim().toLowerCase() === "espol" ? "espol" : "devfest";
 }
 
 export const TRAMOS: readonly Tramo[] = TRAMOS_POR_PRESENTACION[presentacionActiva()];

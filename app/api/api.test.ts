@@ -313,21 +313,21 @@ describe("GET /api/sugerencias", () => {
     expect(r.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("devuelve 3 preguntas por tramo de lámina (presentación de ESPOL)", async () => {
+  it("devuelve 3 preguntas por tramo de lámina (presentación del DevFest, también en ESPOL)", async () => {
     const t1 = await sugerenciasEn("1");
-    expect(await sugerenciasEn("11")).toEqual(t1);
+    expect(await sugerenciasEn("8")).toEqual(t1);
     expect(t1.join(" ")).toMatch(/agente/i);
     expect(t1.join(" ")).toMatch(/loop/i);
     expect(t1.join(" ")).toMatch(/harness/i);
 
-    const t2 = await sugerenciasEn("12");
-    expect(await sugerenciasEn("19")).toEqual(t2);
+    const t2 = await sugerenciasEn("9");
+    expect(await sugerenciasEn("17")).toEqual(t2);
     expect(t2.join(" ")).toMatch(/PRD/);
-    expect(t2.join(" ")).toMatch(/patrón agéntico/i);
+    expect(t2.join(" ")).toMatch(/patrones de agentes/i);
     expect(t2).not.toEqual(t1);
 
-    const t3 = await sugerenciasEn("20");
-    expect(await sugerenciasEn("26")).toEqual(t3);
+    const t3 = await sugerenciasEn("18");
+    expect(await sugerenciasEn("25")).toEqual(t3);
     expect(t3.join(" ")).toMatch(/resiliencia|guardrail|eval|observabilidad/i);
     expect(t3).not.toEqual(t2);
   });

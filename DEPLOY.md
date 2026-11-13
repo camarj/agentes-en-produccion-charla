@@ -4,7 +4,8 @@ Guía para publicar, operar y apagar la demo. Todo corre en Google Cloud: el mod
 
 - **Repo:** https://github.com/camarj/agentes-en-produccion-charla
 - **Proyecto de Google Cloud:** `eng-particle-514416-q3`, región `us-east1`.
-- **Charlas:** ESPOL (2026-11-25, 26 láminas) y Google DevFest Guayaquil (2026-12-05, 25 láminas, ~1000 personas).
+- **Charlas:** ESPOL (2026-11-25) y Google DevFest Guayaquil (2026-12-05, ~1000 personas). Las dos usan **la misma presentación**, la del DevFest: `agentes-produccion-devfest-60min.html`, 25 láminas.
+- **Entrada abierta:** cualquier persona que escanee el QR entra con su cuenta de Google. No hay lista de inscritos: la app crea a cada asistente la primera vez que entra.
 - **Una sola imagen** (`Dockerfile`), usada por dos servicios: `charla-web` (la app de los asistentes y el panel del speaker) y `charla-studio` (Mastra Studio y la API de Mastra).
 - Neon, Dokploy, SQLite (`charla.db`) y `mastra.db` ya **no** se usan.
 
@@ -42,7 +43,7 @@ Los secretos viven en Secret Manager. **Nunca** los pongas en el repo, en logs n
 | `PANEL_PASSWORD` | `web` | Contraseña de `/panel` | secreto `panel-password` |
 | `SESSION_SECRET` | `web` | Firma de la cookie de sesión. Cambiarlo cierra todas las sesiones | secreto `session-secret` |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | `web` | Botón «Entrar con Google». Va como **argumento de build** (lo pone `cloudbuild.yaml`) y como variable | el ID de cliente OAuth |
-| `NEXT_PUBLIC_PRESENTACION` | build | Presentación activa (partes de la charla y preguntas sugeridas, `lib/tramos.ts`): `espol` o `devfest`. Solo es **argumento de build** | `cloudbuild.yaml` → `_PRESENTACION` |
+| `NEXT_PUBLIC_PRESENTACION` | build | Presentación activa (partes de la charla y preguntas sugeridas, `lib/tramos.ts`): `devfest` (por defecto, la de las dos charlas) o `espol` (presentación anterior). Solo es **argumento de build** | `cloudbuild.yaml` → `_PRESENTACION` |
 | `STUDIO_URL` | `web` | Enlace «Abrir Mastra Studio» y «ver traza» del panel | la URL de Studio |
 | `PRESUPUESTO_MAX_USD` | `web` | Tope de gasto. Al alcanzarlo el chat se pausa solo | `120` |
 | `MAX_MENSAJES_ASISTENTE` | `web` | Tope de preguntas por persona | `15` |
@@ -65,10 +66,10 @@ gcloud run services update charla-web --region=us-east1 --project=eng-particle-5
    ```bash
    T=$(git rev-parse --short HEAD)
    gcloud builds submit --config cloudbuild.yaml \
-     --substitutions=_TAG=$T,_PRESENTACION=espol \
+     --substitutions=_TAG=$T \
      --project=eng-particle-514416-q3 .
    ```
-   Para el DevFest usa `_PRESENTACION=devfest` (ver §5).
+   Sin `_PRESENTACION` se construye con la presentación del DevFest (ver §5).
 3. Publica la misma imagen en los dos servicios:
    ```bash
    I=us-east1-docker.pkg.dev/eng-particle-514416-q3/charla/app:$T
@@ -105,6 +106,7 @@ Los scripts (`importar:*`, `reiniciar:charla`, `carga`, `purgar:personales`, `ev
    ```bash
    cloud-sql-proxy --gcloud-auth --port 54329 eng-particle-514416-q3:us-east1:charla-db
    ```
+   Si la terminal dice `command not found`, el programa viene con `gcloud` pero no está en el PATH: usa `/opt/homebrew/share/google-cloud-sdk/bin/cloud-sql-proxy` (o instálalo con `gcloud components install cloud-sql-proxy`).
 2. En la terminal de trabajo, carga la URL de la base y la clave de sesión **sin imprimirlas**:
    ```bash
    U=$(gcloud secrets versions access latest --secret=database-url --project=eng-particle-514416-q3)
@@ -119,32 +121,29 @@ Los scripts (`importar:*`, `reiniciar:charla`, `carga`, `purgar:personales`, `ev
 **Láminas.** Las presentaciones están en la raíz del repo:
 
 ```bash
-pnpm importar:laminas agentes-produccion-espol-60min.html     # esperado: 26 láminas
+pnpm importar:laminas agentes-produccion-devfest-60min.html   # esperado: 25 láminas
 ```
 
 Importar agrega o actualiza láminas, pero **no borra** las que sobran. Si la presentación nueva tiene menos láminas, borra primero las sobrantes (`DELETE FROM laminas WHERE numero > N`) y luego importa.
-
-**Inscritos.** El `.xlsx` real nunca va al repo. Impórtalo desde tu computadora y después bórralo:
-
-```bash
-pnpm importar:inscritos <archivo.xlsx>
-```
 
 **Poner el panel en cero antes de la charla:** `pnpm reiniciar:charla` simula y muestra qué borraría; `pnpm reiniciar:charla --si` lo aplica. Detalle en `REINICIO-CHARLA.md`.
 
 ---
 
-## 5. Cambiar a la presentación del DevFest
+## 5. Presentación de las charlas
 
-Después de ESPOL (2026-11-25) y antes del 2026-12-05:
+Decisión del 2026-11-13: **la presentación del DevFest se usa también en ESPOL**. Es la que va por defecto en la imagen (`_PRESENTACION=devfest`) y la que está cargada en la base: 25 láminas, partes «Conceptos» (1–8), «Decisión y diseño» (9–17) y «En producción» (18–25).
 
-1. Construye con `_PRESENTACION=devfest` y publica en ambos servicios (§3).
-2. Con el túnel abierto (§4), haz un respaldo, borra la lámina 26 de ESPOL (`DELETE FROM laminas WHERE numero > 25`) e importa:
-   ```bash
-   pnpm importar:laminas agentes-produccion-devfest-60min.html   # esperado: 25 láminas
-   ```
-3. En el panel, elige «Conceptos» y comprueba que las preguntas sugeridas son las del DevFest.
-4. Ajusta los números de lámina del dataset de evals (`evals/`) a esta presentación antes de correr evals.
+Para comprobarlo:
+
+1. En el panel, la tarjeta «Tramo de la presentación» muestra «Láminas 1–8 · Conceptos», «Láminas 9–17 · Decisión y diseño» y «Láminas 18–25 · En producción».
+2. Con el túnel abierto (§4): `SELECT count(*), max(numero) FROM laminas;` → `25 | 25`.
+
+Si cambias la presentación otra vez:
+
+1. Construye con `_PRESENTACION=<devfest|espol>` y publica en ambos servicios (§3).
+2. Con el túnel abierto, haz un respaldo, borra las láminas que sobren (`DELETE FROM laminas WHERE numero > N`, con N = láminas de la presentación nueva) e importa su HTML con `pnpm importar:laminas`.
+3. Ajusta los números de lámina del dataset de evals (`evals/`) antes de correr evals: hoy usan su propia copia de una presentación anterior de 40 láminas, en un esquema temporal, y no dependen de la que está cargada.
 
 ---
 
@@ -212,7 +211,7 @@ Hoy cuesta unos USD 70 al mes, sobre todo Cloud SQL y la copia mínima de `charl
 
 ## 10. Lo que NO hay que hacer
 
-- No subir `.env`, el `.xlsx` de inscritos ni ningún dato personal al repo.
+- No subir `.env` ni ningún dato personal al repo.
 - No subir el máximo de copias de `charla-web` por encima de 6 sin revisar las conexiones de la base (§1).
 - No conectarse a la base de producción para pruebas automáticas: los tests usan PGlite y las sondas usan un Postgres local.
 - No correr `pnpm purgar:personales` antes de la charla. Para dejar el panel en cero usa `pnpm reiniciar:charla`.
