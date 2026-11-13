@@ -13,12 +13,13 @@ describe("/redes (redes sociales de Raúl)", () => {
     expect(screen.getByText("CEO de Inteliside")).toBeTruthy();
   });
 
-  it("enlaza las cuatro redes con https y en una pestaña nueva segura", () => {
+  it("enlaza las cinco redes con https y en una pestaña nueva segura", () => {
     render(<PaginaRedes />);
     const esperados: [RegExp, string][] = [
       [/^LinkedIn/, "https://www.linkedin.com/in/rauljcamacho"],
       [/^Instagram/, "https://www.instagram.com/raulj.camacho/"],
       [/^X /, "https://x.com/rauljcamacho"],
+      [/^GitHub/, "https://github.com/camarj"],
       [/^Blog/, "https://rauljcamacho.online"],
     ];
     for (const [nombre, href] of esperados) {
@@ -27,6 +28,13 @@ describe("/redes (redes sociales de Raúl)", () => {
       expect(enlace.getAttribute("target")).toBe("_blank");
       expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");
     }
+    expect(screen.getAllByRole("link")).toHaveLength(esperados.length);
+  });
+
+  it("muestra el retrato del speaker y el título completo de la charla", () => {
+    render(<PaginaRedes />);
+    expect(screen.getByRole("img", { name: "Retrato de Raúl Camacho" })).toBeTruthy();
+    expect(screen.getByText("Cómo lograr que tu agente de IA sobreviva en producción")).toBeTruthy();
   });
 
   it("tiene título propio", () => {
